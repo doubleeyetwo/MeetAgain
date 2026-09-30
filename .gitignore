@@ -1,0 +1,26 @@
+node_modules/
+.npm-cache/
+.expo/
+dist/
+web-build/
+.expo-shared/
+.metro-health-check*
+.eslintcache
+.tsbuildinfo
+
+# Local environment and secrets
+.env
+.env*.local
+
+# Native/build credentials
+*.jks
+*.p8
+*.p12
+*.key
+google-services.json
+GoogleService-Info.plist
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
