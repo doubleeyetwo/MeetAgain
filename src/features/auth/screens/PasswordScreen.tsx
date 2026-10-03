@@ -11,39 +11,35 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Logo } from '@/components/Logo';
-import { auth } from '@/config/firebase';
-import { AuthStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, sizes, spacing, text } from '@/theme';
+import { AuthStackParamList } from '@/navigation/types';
+import { useAuth } from '@/features/auth/AuthContext';
+import { FirebaseError } from 'firebase/app';
 
+type PasswordRoute = RouteProp<AuthStackParamList, 'Password'>;
 type AuthNavigation = NativeStackNavigationProp<AuthStackParamList>;
 
-export function SignInScreen() {
+export function PasswordScreen() {
   const navigation = useNavigation<AuthNavigation>();
-  const passwordInput = useRef<TextInput>(null);
-  const busyRef = useRef(false);
-  const [email, setEmail] = useState('');
+  const { params } = useRoute<PasswordRoute>();
+  const { createAccount, profilePending } = useAuth();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   useEffect(() => {
-    navigation.setOptions({ gestureEnabled: !busy });
-  }, [navigation, busy]);
+    navigation.setOptions({ gestureEnabled: !busy && !profilePending });
+  }, [navigation, busy, profilePending]);
 
-  const onSignIn = async () => {
+  const onContinue = async () => {
     if (busyRef.current) return;
-    const normalizedEmail = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setError('Enter a valid email address.');
-      return;
-    }
-    if (!password) {
-      setError('Enter your password.');
+    if (!profilePending && password.length < 8) {
+      setError('Use at least 8 characters for your password.');
       return;
     }
 
@@ -51,24 +47,30 @@ export function SignInScreen() {
     setBusy(true);
     setError('');
     try {
-      await signInWithEmailAndPassword(auth, normalizedEmail, password);
-      // AuthProvider's onAuthStateChanged listener switches to the app on success.
+      await createAccount(params.email, password);
     } catch (failure) {
-      const code = failure && typeof failure === 'object' && 'code' in failure ? failure.code : undefined;
-      switch (code) {
-        case 'auth/invalid-credential':
-        case 'auth/wrong-password':
-        case 'auth/user-not-found':
-          setError('Incorrect email or password. Please try again.');
-          break;
-        case 'auth/network-request-failed':
-          setError('Check your connection and try again.');
-          break;
-        case 'auth/user-disabled':
-          setError('This account is disabled. Please contact support.');
-          break;
-        default:
-          setError('Could not sign in. Please try again.');
+      if (failure instanceof FirebaseError) {
+        switch (failure.code) {
+          case 'auth/email-already-in-use':
+            setError('An account already uses this email. Go back and choose another email.');
+            break;
+          case 'auth/invalid-email':
+            setError('This email address is invalid. Go back and correct it.');
+            break;
+          case 'auth/weak-password':
+            setError('Choose a stronger password and try again.');
+            break;
+          case 'auth/network-request-failed':
+            setError('Check your connection and try again.');
+            break;
+          case 'auth/operation-not-allowed':
+            setError('Email and password signup is not enabled in Firebase yet.');
+            break;
+          default:
+            setError('Could not create your account. Please try again.');
+        }
+      } else {
+        setError(failure instanceof Error ? failure.message : 'Could not create your account. Please try again.');
       }
     } finally {
       busyRef.current = false;
@@ -88,9 +90,9 @@ export function SignInScreen() {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Back to registration"
+              accessibilityLabel="Back to email"
               onPress={() => navigation.goBack()}
-              disabled={busy}
+              disabled={busy || profilePending}
               hitSlop={12}
               style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
             >
@@ -100,31 +102,11 @@ export function SignInScreen() {
             <Logo />
 
             <View style={styles.headings}>
-              <Text style={styles.title}>Sign In to Account</Text>
+              <Text style={styles.title}>Create an account</Text>
+              <Text style={styles.subtitle}>Create a new password</Text>
             </View>
 
             <TextInput
-              value={email}
-              onChangeText={(value) => {
-                setEmail(value);
-                if (error) setError('');
-              }}
-              placeholder="email@domain.com"
-              placeholderTextColor={colors.white}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              returnKeyType="next"
-              accessibilityLabel="Email address"
-              onSubmitEditing={() => passwordInput.current?.focus()}
-              editable={!busy}
-              style={styles.input}
-            />
-
-            <TextInput
-              ref={passwordInput}
               value={password}
               onChangeText={(value) => {
                 setPassword(value);
@@ -135,21 +117,20 @@ export function SignInScreen() {
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="current-password"
-              textContentType="password"
+              autoComplete="new-password"
+              textContentType="newPassword"
               returnKeyType="go"
-              accessibilityLabel="Password"
-              onSubmitEditing={onSignIn}
-              editable={!busy}
-              style={[styles.input, styles.passwordInput]}
+              accessibilityLabel={`Password for ${params.email}`}
+              onSubmitEditing={onContinue}
+              editable={!busy && !profilePending}
+              style={styles.input}
             />
 
             {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Sign into MeetAgain"
-              onPress={onSignIn}
+              onPress={onContinue}
               disabled={busy}
               style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed]}
             >
@@ -158,17 +139,8 @@ export function SignInScreen() {
                 {...gradientDirection.horizontal}
                 style={styles.buttonFill}
               >
-                <Text style={styles.buttonText}>{busy ? 'Signing in...' : 'Sign Into MeetAgain'}</Text>
+                <Text style={styles.buttonText}>{busy ? (profilePending ? 'Saving profile...' : 'Creating account...') : profilePending ? 'Retry' : 'Continue'}</Text>
               </LinearGradient>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="link"
-              onPress={() => navigation.navigate('ForgotPassword')}
-              disabled={busy}
-              style={({ pressed }) => [styles.forgotLink, pressed && styles.pressed]}
-            >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -177,7 +149,7 @@ export function SignInScreen() {
   );
 }
 
-export default SignInScreen;
+export default PasswordScreen;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -198,8 +170,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backChevron: { color: colors.white, fontSize: 38, lineHeight: 40, fontWeight: '300' },
-  headings: { alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.lg },
+  headings: { alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.lg, gap: spacing.xs },
   title: { ...text.header, color: colors.white },
+  subtitle: { ...text.body, color: colors.white },
   input: {
     ...text.body,
     height: sizes.controlHeight,
@@ -209,12 +182,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.white,
   },
-  passwordInput: { marginTop: spacing.md },
   error: { ...text.body, color: '#ff9aa8', marginTop: spacing.xs, textAlign: 'center' },
   buttonShell: { marginTop: spacing.md, borderRadius: radius.sm, overflow: 'hidden' },
   buttonFill: { height: sizes.controlHeight, alignItems: 'center', justifyContent: 'center' },
   buttonText: { ...text.body, color: colors.white },
-  forgotLink: { alignSelf: 'center', marginTop: spacing.lg, padding: spacing.xs },
-  forgotText: { ...text.body, color: colors.primaryAccent, textDecorationLine: 'underline' },
   pressed: { opacity: 0.85 },
 });

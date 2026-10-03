@@ -1,6 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /users/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      // Signup writes only the signed-in user's initial profile.
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['id', 'email', 'displayName', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['id', 'email', 'displayName', 'createdAt', 'updatedAt'])
+        && request.resource.data.id == userId
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName == ''
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
     match /{document=**} {
       allow read, write: if false;
     }

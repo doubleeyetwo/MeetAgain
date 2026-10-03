@@ -16,20 +16,32 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, gradients, gradientDirection, spacing, radius, sizes, text } from '@/theme';
 import { Logo, GoogleIcon } from '@/components/Logo';
+import { AuthStackParamList } from '@/navigation/types';
 
 const TERMS_URL = 'https://example.com/terms'; // TODO: replace
 const PRIVACY_URL = 'https://example.com/privacy'; // TODO: replace
 
 export function RegisterScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
 
-  const onContinue = (value: string) => console.log('continue', value); // TODO
+  const onContinue = () => {
+    const normalizedEmail = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setEmailError('Enter a valid email address.');
+      return;
+    }
+
+    setEmailError('');
+    navigation.navigate('Password', { email: normalizedEmail });
+  };
   const onGoogle = () => console.log('google'); // TODO
-  const onSignIn = () => navigation.goBack(); // TODO: go to your sign-in screen
+  const onSignIn = () => navigation.navigate('SignIn');
 
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
@@ -53,7 +65,10 @@ export function RegisterScreen() {
 
             <TextInput
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(value) => {
+                setEmail(value);
+                if (emailError) setEmailError('');
+              }}
               placeholder="email@domain.com"
               placeholderTextColor={colors.white}
               keyboardType="email-address"
@@ -61,12 +76,16 @@ export function RegisterScreen() {
               autoCorrect={false}
               autoComplete="email"
               textContentType="emailAddress"
-              returnKeyType="done"
+              returnKeyType="go"
+              accessibilityLabel="Email address"
+              onSubmitEditing={onContinue}
               style={styles.input}
             />
 
+            {emailError ? <Text accessibilityRole="alert" style={styles.error}>{emailError}</Text> : null}
+
             <Pressable
-              onPress={() => onContinue(email.trim())}
+              onPress={onContinue}
               style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed]}
             >
               <LinearGradient
@@ -140,6 +159,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.white,
   },
+  error: { ...text.body, color: '#ff9aa8', marginTop: spacing.xs, textAlign: 'center' },
 
   buttonShell: { marginTop: spacing.md, borderRadius: radius.sm, overflow: 'hidden' },
   buttonFill: { height: sizes.controlHeight, alignItems: 'center', justifyContent: 'center' },
