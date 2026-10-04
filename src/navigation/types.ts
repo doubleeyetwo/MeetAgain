@@ -4,6 +4,7 @@ export type AuthStackParamList = {
   SignIn: undefined;
   Register: undefined;
   Password: { email: string };
+  CreateProfile: undefined;
   ForgotPassword: undefined;
 };
 export type MainTabParamList = { Home: undefined; MeetNow: undefined; Friends: undefined; Notifications: undefined; Profile: undefined };
