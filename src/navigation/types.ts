@@ -7,5 +7,16 @@ export type AuthStackParamList = {
   CreateProfile: undefined;
   ForgotPassword: undefined;
 };
-export type MainTabParamList = { Home: undefined; MeetNow: undefined; Friends: undefined; Notifications: undefined; Profile: undefined };
-export type AppStackParamList = { MainTabs: NavigatorScreenParams<MainTabParamList>; CreateEvent: undefined; EventDetails: { eventId: string } };
+export type MainTabParamList = {
+  Home: undefined;
+  MeetNow: undefined;
+  Friends: undefined;
+  Notifications: undefined;
+  Profile: undefined;
+};
+
+export type AppStackParamList = {
+  MainTabs: NavigatorScreenParams<MainTabParamList>;
+  CreateEvent: undefined;
+  EventDetails: { eventId: string };
+};

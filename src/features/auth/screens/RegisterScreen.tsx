@@ -1,6 +1,3 @@
-// import { Text } from 'react-native'; import { Screen } from '@/components/Screen';
-// export function RegisterScreen() { return <Screen title="Create account"><Text>Registration form placeholder.</Text></Screen>; }
-
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -82,7 +79,9 @@ export function RegisterScreen() {
               style={styles.input}
             />
 
-            {emailError ? <Text accessibilityRole="alert" style={styles.error}>{emailError}</Text> : null}
+            {emailError ? (
+              <Text accessibilityRole="alert" style={styles.error}>{emailError}</Text>
+            ) : null}
 
             <Pressable
               onPress={onContinue}
@@ -113,7 +112,7 @@ export function RegisterScreen() {
 
             <Text style={styles.legal}>
               By clicking continue, you agree to our{' '}
-              <Text style={styles.legalLink} onPress={() => Linking.openURL(TERMS_URL) }>
+              <Text style={styles.legalLink} onPress={() => Linking.openURL(TERMS_URL)}>
                 Terms of Service
               </Text>{' '}
               and{' '}
@@ -146,7 +145,12 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
 
-  headings: { alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.lg, gap: spacing.xs },
+  headings: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
+    gap: spacing.xs,
+  },
   title: { ...text.header, color: colors.white },
   subtitle: { ...text.body, color: colors.white },
 
@@ -159,15 +163,37 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.white,
   },
-  error: { ...text.body, color: '#ff9aa8', marginTop: spacing.xs, textAlign: 'center' },
+  error: {
+    ...text.body,
+    color: '#ff9aa8',
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
 
-  buttonShell: { marginTop: spacing.md, borderRadius: radius.sm, overflow: 'hidden' },
-  buttonFill: { height: sizes.controlHeight, alignItems: 'center', justifyContent: 'center' },
+  buttonShell: {
+    marginTop: spacing.md,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+  },
+  buttonFill: {
+    height: sizes.controlHeight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   buttonText: { ...text.body, color: colors.white },
   pressed: { opacity: 0.85 },
 
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.lg, gap: spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.primaryAccent },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.lg,
+    gap: spacing.md,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.primaryAccent,
+  },
   dividerText: { ...text.body, color: colors.white },
 
   googleButton: {
@@ -188,8 +214,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.white,
   },
-  legalLink: { color: colors.primaryAccent, textDecorationLine: 'underline' },
+  legalLink: {
+    color: colors.primaryAccent,
+    textDecorationLine: 'underline',
+  },
 
-  signInRow: { ...text.body, marginTop: spacing.xl, textAlign: 'center', color: colors.white },
-  signInLink: { color: colors.primaryAccent, textDecorationLine: 'underline' },
+  signInRow: {
+    ...text.body,
+    marginTop: spacing.xl,
+    textAlign: 'center',
+    color: colors.white,
+  },
+  signInLink: {
+    color: colors.primaryAccent,
+    textDecorationLine: 'underline',
+  },
 });

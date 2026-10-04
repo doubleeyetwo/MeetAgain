@@ -12,7 +12,9 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Reuse the app during Expo Fast Refresh instead of initializing Firebase again.
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
+// Reserved for future uploads; signup photos currently live in Firestore.
 export const storage = getStorage(firebaseApp);

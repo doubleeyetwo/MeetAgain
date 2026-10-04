@@ -150,7 +150,9 @@ export function SignInScreen() {
               style={[styles.input, styles.passwordInput]}
             />
 
-            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+            {error ? (
+              <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+            ) : null}
 
             <Pressable
               accessibilityRole="button"
@@ -203,8 +205,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backChevron: { color: colors.white, fontSize: 38, lineHeight: 40, fontWeight: '300' },
-  headings: { alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.lg },
+  backChevron: {
+    color: colors.white,
+    fontSize: 38,
+    lineHeight: 40,
+    fontWeight: '300',
+  },
+  headings: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
+  },
   title: { ...text.header, color: colors.white },
   input: {
     ...text.body,
@@ -216,11 +227,32 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   passwordInput: { marginTop: spacing.md },
-  error: { ...text.body, color: '#ff9aa8', marginTop: spacing.xs, textAlign: 'center' },
-  buttonShell: { marginTop: spacing.md, borderRadius: radius.sm, overflow: 'hidden' },
-  buttonFill: { height: sizes.controlHeight, alignItems: 'center', justifyContent: 'center' },
+  error: {
+    ...text.body,
+    color: '#ff9aa8',
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  buttonShell: {
+    marginTop: spacing.md,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+  },
+  buttonFill: {
+    height: sizes.controlHeight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   buttonText: { ...text.body, color: colors.white },
-  forgotLink: { alignSelf: 'center', marginTop: spacing.lg, padding: spacing.xs },
-  forgotText: { ...text.body, color: colors.primaryAccent, textDecorationLine: 'underline' },
+  forgotLink: {
+    alignSelf: 'center',
+    marginTop: spacing.lg,
+    padding: spacing.xs,
+  },
+  forgotText: {
+    ...text.body,
+    color: colors.primaryAccent,
+    textDecorationLine: 'underline',
+  },
   pressed: { opacity: 0.85 },
 });

@@ -10,5 +10,24 @@ import { CreateEventScreen } from '@/features/events/screens/CreateEventScreen';
 
 const Tabs = createBottomTabNavigator<MainTabParamList>();
 const Stack = createNativeStackNavigator<AppStackParamList>();
-function MainTabs() { return <Tabs.Navigator><Tabs.Screen name="Home" component={HomeScreen} /><Tabs.Screen name="MeetNow" component={MeetNowScreen} /><Tabs.Screen name="Friends" component={FriendsScreen} /><Tabs.Screen name="Notifications" component={NotificationsScreen} /><Tabs.Screen name="Profile" component={ProfileScreen} /></Tabs.Navigator>; }
-export function AppNavigator() { return <Stack.Navigator><Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} /><Stack.Screen name="CreateEvent" component={CreateEventScreen} options={{ title: 'Create event' }} /></Stack.Navigator>; }
+
+function MainTabs() {
+  return (
+    <Tabs.Navigator>
+      <Tabs.Screen name="Home" component={HomeScreen} />
+      <Tabs.Screen name="MeetNow" component={MeetNowScreen} />
+      <Tabs.Screen name="Friends" component={FriendsScreen} />
+      <Tabs.Screen name="Notifications" component={NotificationsScreen} />
+      <Tabs.Screen name="Profile" component={ProfileScreen} />
+    </Tabs.Navigator>
+  );
+}
+
+export function AppNavigator() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
+      <Stack.Screen name="CreateEvent" component={CreateEventScreen} options={{ title: 'Create event' }} />
+    </Stack.Navigator>
+  );
+}

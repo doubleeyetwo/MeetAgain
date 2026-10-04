@@ -84,7 +84,9 @@ export function PasswordScreen() {
               style={styles.input}
             />
 
-            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+            {error ? (
+              <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+            ) : null}
 
             <Pressable
               accessibilityRole="button"
@@ -126,8 +128,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backChevron: { color: colors.white, fontSize: 38, lineHeight: 40, fontWeight: '300' },
-  headings: { alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.lg, gap: spacing.xs },
+  backChevron: {
+    color: colors.white,
+    fontSize: 38,
+    lineHeight: 40,
+    fontWeight: '300',
+  },
+  headings: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
+    gap: spacing.xs,
+  },
   title: { ...text.header, color: colors.white },
   subtitle: { ...text.body, color: colors.white },
   input: {
@@ -139,9 +151,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.white,
   },
-  error: { ...text.body, color: '#ff9aa8', marginTop: spacing.xs, textAlign: 'center' },
-  buttonShell: { marginTop: spacing.md, borderRadius: radius.sm, overflow: 'hidden' },
-  buttonFill: { height: sizes.controlHeight, alignItems: 'center', justifyContent: 'center' },
+  error: {
+    ...text.body,
+    color: '#ff9aa8',
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  buttonShell: {
+    marginTop: spacing.md,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+  },
+  buttonFill: {
+    height: sizes.controlHeight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   buttonText: { ...text.body, color: colors.white },
   pressed: { opacity: 0.85 },
 });
