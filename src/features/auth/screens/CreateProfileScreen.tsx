@@ -55,6 +55,7 @@ export function CreateProfileScreen() {
     if (!asset) return;
     setPhotoBusy(true);
     try {
+      // Normalize camera and library selections to a compact JPEG before embedding them in Firestore.
       const resized = await ImageManipulator.manipulateAsync(asset.uri, [{ resize: { width: PROFILE_PHOTO_RESIZE_WIDTH } }], {
         compress: PROFILE_PHOTO_COMPRESSION,
         format: ImageManipulator.SaveFormat.JPEG,
@@ -64,6 +65,7 @@ export function CreateProfileScreen() {
         throw new Error('Photo conversion failed.');
       }
       const dataUrl = `${PROFILE_PHOTO_JPEG_PREFIX}${resized.base64}`;
+      // Enforce our profile photo size limit before sending the data URL to Firestore.
       if (dataUrl.length > PROFILE_PHOTO_MAX_DATA_URL_LENGTH) {
         setError('This photo is too detailed. Choose a simpler photo under 150 KB.');
         return;
@@ -77,6 +79,7 @@ export function CreateProfileScreen() {
     }
   };
 
+  /* ---------- MOVE TO HELPER FILE? ---------- */
   const chooseFromLibrary = async () => {
     try {
       await usePickedPhoto(await ImagePicker.launchImageLibraryAsync({
@@ -122,6 +125,7 @@ export function CreateProfileScreen() {
   };
 
   const onJoin = async () => {
+    // The ref closes the same-tick double-tap window before React updates the disabled state.
     if (busyRef.current || photoBusy) return;
     const result = validateProfile({ firstName, lastName, username, dateOfBirth });
     if (!result.profile) {
@@ -134,6 +138,7 @@ export function CreateProfileScreen() {
     try {
       await createAccount(result.profile, photo);
     } catch (failure) {
+      // Translate Firebase codes into actionable copy while preserving profile retry messages.
       const code = failure && typeof failure === 'object' && 'code' in failure ? failure.code : undefined;
       switch (code) {
         case 'auth/email-already-in-use':
@@ -160,6 +165,7 @@ export function CreateProfileScreen() {
     }
   };
 
+  /* ---------- BUILDING SCREEN ---------- */
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <StatusBar style="light" />

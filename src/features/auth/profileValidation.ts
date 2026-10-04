@@ -23,6 +23,7 @@ export function validateProfile(input: ProfileInput): { profile?: ValidProfile; 
   const month = Number(match[1]);
   const day = Number(match[2]);
   const year = Number(match[3]);
+  // UTC construction lets the round-trip checks reject impossible dates without local timezone shifts.
   const date = new Date(Date.UTC(year, month - 1, day));
   const today = new Date();
   if (
@@ -38,6 +39,7 @@ export function validateProfile(input: ProfileInput): { profile?: ValidProfile; 
       firstName,
       lastName,
       username,
+      // Persist one sortable ISO form even though the form accepts a familiar US date.
       dateOfBirth: `${String(year).padStart(4, '0')}-${match[1]}-${match[2]}`,
       displayName: `${firstName} ${lastName}`,
     },

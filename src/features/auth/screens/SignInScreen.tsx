@@ -38,10 +38,12 @@ export function SignInScreen() {
   }, [navigation, busy]);
 
   useEffect(() => {
+    // An authenticated account without a saved profile must finish setup before entering the app.
     if (profilePending) navigation.navigate('CreateProfile');
   }, [navigation, profilePending]);
 
   const onSignIn = async () => {
+    // Guard rapid taps before the pending state reaches the button.
     if (busyRef.current) return;
     const normalizedEmail = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -58,7 +60,7 @@ export function SignInScreen() {
     setError('');
     try {
       await signInWithEmailAndPassword(auth, normalizedEmail, password);
-      // AuthProvider's onAuthStateChanged listener switches to the app on success.
+      // AuthProvider checks for a profile before its auth state can switch to the main app.
     } catch (failure) {
       const code = failure && typeof failure === 'object' && 'code' in failure ? failure.code : undefined;
       switch (code) {

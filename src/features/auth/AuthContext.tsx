@@ -56,6 +56,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
 
       try {
+        // Firebase auth alone is not enough to enter the app; the profile document gates access.
         const savedProfile = await getDoc(doc(db, 'users', nextUser.uid));
         if (currentAuthChangeId !== authChangeId.current || isCreatingAccount.current) return;
 
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
       } catch {
         if (currentAuthChangeId !== authChangeId.current || isCreatingAccount.current) return;
-        // A profile check must succeed before opening the main app.
+        // Keep the user in profile setup so a transient read failure cannot bypass the profile gate.
         pendingProfileUser.current = nextUser;
         setProfilePending(true);
         setUser(null);
@@ -106,7 +107,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       const userRef = doc(db, 'users', account.uid);
       const usernameRef = doc(db, 'usernames', profile.username);
-      // Claim the username and save the profile together so neither can commit alone.
+      // Auth account creation happens separately; this transaction keeps the username claim and profile atomic.
       await runTransaction(db, async (transaction) => {
         const existingProfile = await transaction.get(userRef);
         const usernameClaim = await transaction.get(usernameRef);

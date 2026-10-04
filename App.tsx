@@ -13,6 +13,7 @@ import {
 function RootNavigator() {
   const { user, loading } = useAuth();
 
+  // Wait for Firebase and the profile check before choosing which navigator to show.
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -24,6 +25,7 @@ function RootNavigator() {
   return user ? <AppNavigator /> : <AuthNavigator />;
 }
 
+// Load the app font before mounting navigation and provide auth state to every screen.
 export default function App() {
   const [fontsLoaded] = useFonts({ Moderustic_400Regular, Moderustic_600SemiBold });
 

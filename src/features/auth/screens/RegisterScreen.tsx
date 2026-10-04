@@ -28,6 +28,7 @@ export function RegisterScreen() {
   const [emailError, setEmailError] = useState('');
 
   const onContinue = () => {
+    // Trim before passing the email between screens so signup uses the same normalized value.
     const normalizedEmail = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setEmailError('Enter a valid email address.');

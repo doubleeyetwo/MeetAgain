@@ -34,6 +34,7 @@ export function PasswordScreen() {
       return;
     }
     setError('');
+    // AuthContext keeps this draft in memory so the password never enters navigation params or storage.
     setSignupDraft({ email: params.email, password });
     navigation.navigate('CreateProfile');
   };

@@ -1,5 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 
+// Firestore document shapes shared by the feature screens and data layer.
 export type UserProfile = {
   id: string;
   displayName: string;

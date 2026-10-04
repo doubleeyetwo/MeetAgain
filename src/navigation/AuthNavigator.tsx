@@ -12,6 +12,7 @@ const Stack = createNativeStackNavigator<AuthStackParamList>();
 export function AuthNavigator() {
   const { profilePending } = useAuth();
 
+  // Resume incomplete account setup at its profile step after auth state is restored.
   return (
     <Stack.Navigator
       initialRouteName={profilePending ? 'CreateProfile' : 'Register'}

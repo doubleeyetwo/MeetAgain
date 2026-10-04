@@ -1,5 +1,6 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
 
+// Route params are deliberately limited to non-secret navigation state; signup credentials stay in AuthContext.
 export type AuthStackParamList = {
   SignIn: undefined;
   Register: undefined;

@@ -23,6 +23,7 @@ function MainTabs() {
   );
 }
 
+// Keep event creation above the tab shell so it can be opened from any main tab.
 export function AppNavigator() {
   return (
     <Stack.Navigator>

@@ -1,3 +1,4 @@
+// Shared collection names for Firestore data calls as feature storage is added.
 export const collections = {
   users: 'users',
   usernames: 'usernames',

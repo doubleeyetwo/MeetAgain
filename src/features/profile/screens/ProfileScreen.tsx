@@ -10,6 +10,7 @@ export function ProfileScreen() {
   const busyRef = useRef(false);
 
   const onSignOut = async () => {
+    // Prevent duplicate sign-out requests while the button's disabled state updates.
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
