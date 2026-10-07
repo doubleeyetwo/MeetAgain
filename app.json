@@ -7,12 +7,14 @@
     "userInterfaceStyle": "automatic",
     "scheme": "meetagain",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.meetagain.app"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.meetagain.app"
     },
     "web": {
       "bundler": "metro"
