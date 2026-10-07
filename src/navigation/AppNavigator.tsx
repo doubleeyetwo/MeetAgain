@@ -1,16 +1,13 @@
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  BottomTabBarProps,
-  createBottomTabNavigator,
-} from '@react-navigation/bottom-tabs';
+import { BottomTabBarProps, createBottomTabNavigator,} from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { AppStackParamList, MainTabParamList } from './types';
 
 import { HomeScreen } from '@/features/home/screens/HomeScreen';
 import { MessageFeedScreen } from '@/features/messages/screens/MessageFeedScreen';
-import { CreateEventScreen } from '@/features/events/screens/CreateEventScreen';
+import { EventCreationNavigator } from '@/features/events/navigation/EventCreationNavigator';
 import { CalendarViewScreen } from '@/features/calendar/screens/CalendarViewScreen';
 import { ProfileScreen } from '@/features/profile/screens/ProfileScreen';
 
@@ -142,10 +139,9 @@ function MainTabs() {
         component={MessageFeedScreen}
       />
 
-      <Tabs.Screen
-        name="CreateEvent"
-        component={CreateEventScreen}
-      />
+      <Tabs.Screen 
+      name="CreateEvent" 
+      component={EventCreationNavigator} />
 
       <Tabs.Screen
         name="Calendar"
