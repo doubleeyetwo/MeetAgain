@@ -10,14 +10,13 @@ export type AuthStackParamList = {
 };
 export type MainTabParamList = {
   Home: undefined;
-  MeetNow: undefined;
-  Friends: undefined;
-  Notifications: undefined;
+  Messages: undefined;
+  CreateEvent: undefined;
+  Calendar: undefined;
   Profile: undefined;
 };
 
 export type AppStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
-  CreateEvent: undefined;
   EventDetails: { eventId: string };
 };
