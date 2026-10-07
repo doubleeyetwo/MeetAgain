@@ -1,6 +1,7 @@
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { useAuth } from './AuthContext';
 
 // Closes the auth browser tab once Google redirects back into the app.
@@ -9,6 +10,15 @@ WebBrowser.maybeCompleteAuthSession();
 const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+
+// expo-auth-session still builds a request when the client ID is blank, so an
+// unset .env would leave the button looking usable. Check the ID this platform
+// actually sends instead.
+const clientIdForPlatform = Platform.select({
+  ios: iosClientId,
+  android: androidClientId,
+  default: webClientId,
+});
 
 type GoogleSignIn = {
   /** Opens the Google consent screen. */
@@ -80,6 +90,6 @@ export function useGoogleSignIn(): GoogleSignIn {
     },
     pending,
     error,
-    available: Boolean(request),
+    available: Boolean(request) && Boolean(clientIdForPlatform),
   };
 }
