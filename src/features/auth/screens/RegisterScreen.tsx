@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Linking,
@@ -18,16 +18,26 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, gradients, gradientDirection, spacing, radius, sizes, text } from '@/theme';
 import { Logo, GoogleIcon } from '@/components/Logo';
 import { AuthStackParamList } from '@/navigation/types';
+import { useAuth } from '@/features/auth/AuthContext';
+import { googleSignInError } from '@/features/auth/googleSignInError';
 
 const TERMS_URL = 'https://example.com/terms'; // TODO: replace
 const PRIVACY_URL = 'https://example.com/privacy'; // TODO: replace
 
 export function RegisterScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const { profilePending, signInWithGoogle } = useAuth();
+  const busyRef = useRef(false);
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (profilePending) navigation.navigate('CreateProfile');
+  }, [navigation, profilePending]);
 
   const onContinue = () => {
+    if (busyRef.current) return;
     // Trim before passing the email between screens so signup uses the same normalized value.
     const normalizedEmail = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -38,8 +48,23 @@ export function RegisterScreen() {
     setEmailError('');
     navigation.navigate('Password', { email: normalizedEmail });
   };
-  const onGoogle = () => console.log('google'); // TODO
-  const onSignIn = () => navigation.navigate('SignIn');
+  const onGoogle = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setEmailError('');
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      setEmailError(googleSignInError(error));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+  const onSignIn = () => {
+    if (!busyRef.current) navigation.navigate('SignIn');
+  };
 
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
@@ -77,6 +102,7 @@ export function RegisterScreen() {
               returnKeyType="go"
               accessibilityLabel="Email address"
               onSubmitEditing={onContinue}
+              editable={!busy}
               style={styles.input}
             />
 
@@ -86,6 +112,7 @@ export function RegisterScreen() {
 
             <Pressable
               onPress={onContinue}
+              disabled={busy}
               style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed]}
             >
               <LinearGradient
@@ -105,10 +132,13 @@ export function RegisterScreen() {
 
             <Pressable
               onPress={onGoogle}
+              accessibilityRole="button"
+              accessibilityLabel="Continue with Google"
+              disabled={busy}
               style={({ pressed }) => [styles.googleButton, pressed && styles.pressed]}
             >
               <GoogleIcon />
-              <Text style={styles.buttonText}>Continue with Google</Text>
+              <Text style={styles.buttonText}>{busy ? 'Connecting to Google...' : 'Continue with Google'}</Text>
             </Pressable>
 
             <Text style={styles.legal}>

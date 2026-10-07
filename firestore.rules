@@ -3,13 +3,15 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
       allow get: if request.auth != null && request.auth.uid == userId;
-      // Signup creates a completed profile alongside the matching username claim.
-      allow create: if request.auth != null
-        && request.auth.uid == userId
-        && request.resource.data.keys().hasAll(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'createdAt', 'updatedAt'])
+      function validIdentity() {
+        return request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.id == userId
+          && request.resource.data.email == request.auth.token.email;
+      }
+      function validCompletedProfile() {
+        return request.resource.data.keys().hasAll(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'createdAt', 'updatedAt'])
         && request.resource.data.keys().hasOnly(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'photoDataUrl', 'createdAt', 'updatedAt'])
-        && request.resource.data.id == userId
-        && request.resource.data.email == request.auth.token.email
         && request.resource.data.firstName is string
         && request.resource.data.firstName.size() > 0
         && request.resource.data.firstName.size() <= 80
@@ -27,9 +29,21 @@ service cloud.firestore {
           && request.resource.data.photoDataUrl.size() <= 200023
           && request.resource.data.photoDataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
         ))
-        && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == userId;
+      }
+      // Google signup first creates a minimal document; profile setup completes it once.
+      allow create: if validIdentity()
+        && ((request.resource.data.keys().hasAll(['id', 'email', 'profileComplete', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['id', 'email', 'profileComplete', 'createdAt', 'updatedAt'])
+          && request.resource.data.profileComplete == false
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time)
+          || (validCompletedProfile() && request.resource.data.createdAt == request.time));
+      allow update: if validIdentity()
+        && resource.data.profileComplete == false
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validCompletedProfile();
     }
     match /usernames/{username} {
       // Signed-in users can check availability; listing and changes are denied.

@@ -1,6 +1,7 @@
-import { createUserWithEmailAndPassword, onAuthStateChanged, User } from 'firebase/auth';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { createContext, PropsWithChildren, useContext, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { auth, db } from '@/config/firebase';
 import { PROFILE_PHOTO_JPEG_PREFIX, PROFILE_PHOTO_MAX_DATA_URL_LENGTH } from './profilePhoto';
 import { ValidProfile } from './profileValidation';
@@ -11,14 +12,20 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   profilePending: boolean;
+  signedOut: boolean;
   setSignupDraft: (draft: SignupDraft) => void;
+  signInWithGoogle: () => Promise<void>;
   createAccount: (profile: ValidProfile, photo?: ProfilePhoto) => Promise<void>;
 };
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
   profilePending: false,
+  signedOut: false,
   setSignupDraft: () => {
+    throw new Error('AuthProvider is missing.');
+  },
+  signInWithGoogle: async () => {
     throw new Error('AuthProvider is missing.');
   },
   createAccount: async () => {
@@ -30,8 +37,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [profilePending, setProfilePending] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
+  const hasEnteredApp = useRef(false);
   const isCreatingAccount = useRef(false);
   const isAccountCreationBusy = useRef(false);
+  const isGoogleSignInBusy = useRef(false);
   const pendingProfileUser = useRef<User | null>(null);
   // Ignore profile lookups that finish after a newer auth state arrives.
   const authChangeId = useRef(0);
@@ -42,12 +52,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return onAuthStateChanged(auth, async (nextUser) => {
       const currentAuthChangeId = ++authChangeId.current;
       // Firebase signs in immediately; keep signup visible until the profile transaction commits.
-      if (isCreatingAccount.current) {
+      if (isCreatingAccount.current || isGoogleSignInBusy.current) {
         setLoading(false);
         return;
       }
 
       if (!nextUser) {
+        if (hasEnteredApp.current) setSignedOut(true);
+        hasEnteredApp.current = false;
         pendingProfileUser.current = null;
         setProfilePending(false);
         setUser(null);
@@ -58,11 +70,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         // Firebase auth alone is not enough to enter the app; the profile document gates access.
         const savedProfile = await getDoc(doc(db, 'users', nextUser.uid));
-        if (currentAuthChangeId !== authChangeId.current || isCreatingAccount.current) return;
+        if (currentAuthChangeId !== authChangeId.current || isCreatingAccount.current || isGoogleSignInBusy.current) return;
 
-        if (savedProfile.exists()) {
+        if (savedProfile.exists() && savedProfile.data().profileComplete !== false) {
           // Existing accounts created before this signup flow may not have profileComplete.
           pendingProfileUser.current = null;
+          hasEnteredApp.current = true;
           setProfilePending(false);
           setUser(nextUser);
         } else {
@@ -71,7 +84,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setUser(null);
         }
       } catch {
-        if (currentAuthChangeId !== authChangeId.current || isCreatingAccount.current) return;
+        if (currentAuthChangeId !== authChangeId.current || isCreatingAccount.current || isGoogleSignInBusy.current) return;
         // Keep the user in profile setup so a transient read failure cannot bypass the profile gate.
         pendingProfileUser.current = nextUser;
         setProfilePending(true);
@@ -81,6 +94,58 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
     });
   }, []);
+
+  const signInWithGoogle = async () => {
+    if (isGoogleSignInBusy.current) return;
+    if (Platform.OS !== 'web') {
+      throw new Error('Google sign-in is currently available in the web app.');
+    }
+
+    isGoogleSignInBusy.current = true;
+    let authenticatedAccount: User | null = null;
+    try {
+      // Firebase handles Google's OAuth tokens; auth has web persistence configured at startup.
+      const account = (await signInWithPopup(auth, new GoogleAuthProvider())).user;
+      authenticatedAccount = account;
+      if (!account.email) throw new Error('Your Google account did not provide an email address.');
+
+      const savedProfile = await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', account.uid);
+        const profile = await transaction.get(userRef);
+        if (!profile.exists()) {
+          transaction.set(userRef, {
+            id: account.uid,
+            email: account.email,
+            profileComplete: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        return profile;
+      });
+
+      signupDraftRef.current = null;
+      if (savedProfile.exists() && savedProfile.data().profileComplete !== false) {
+        pendingProfileUser.current = null;
+        hasEnteredApp.current = true;
+        setProfilePending(false);
+        setUser(account);
+      } else {
+        pendingProfileUser.current = account;
+        setProfilePending(true);
+        setUser(null);
+      }
+    } catch (error) {
+      // A failed profile read or write must never admit an authenticated user to Home.
+      setUser(null);
+      if (authenticatedAccount && auth.currentUser?.uid === authenticatedAccount.uid) {
+        try { await signOut(auth); } catch { /* Keep the original profile error visible. */ }
+      }
+      throw error;
+    } finally {
+      isGoogleSignInBusy.current = false;
+    }
+  };
 
   const createAccount = async (profile: ValidProfile, photo?: ProfilePhoto) => {
     if (isAccountCreationBusy.current) return;
@@ -112,15 +177,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const existingProfile = await transaction.get(userRef);
         const usernameClaim = await transaction.get(usernameRef);
         // A prior transaction may have committed even if its response was lost.
-        if (existingProfile.exists()) {
-          if (existingProfile.data().profileComplete === true) return;
-          throw new Error('This account already has an incomplete profile. Please contact support.');
-        }
+        if (existingProfile.exists() && existingProfile.data().profileComplete !== false) return;
         if (usernameClaim.exists()) {
           throw new Error('That username is taken. Choose another and try again.');
         }
         transaction.set(usernameRef, { uid: account.uid });
-        transaction.set(userRef, {
+        const completedProfile = {
           id: account.uid,
           email: account.email,
           firstName: profile.firstName,
@@ -130,12 +192,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
           dateOfBirth: profile.dateOfBirth,
           profileComplete: true,
           ...(photo ? { photoDataUrl: photo.dataUrl } : {}),
-          createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+        if (existingProfile.exists()) {
+          transaction.update(userRef, completedProfile);
+        } else {
+          transaction.set(userRef, { ...completedProfile, createdAt: serverTimestamp() });
+        }
       });
       pendingProfileUser.current = null;
       signupDraftRef.current = null;
+      hasEnteredApp.current = true;
       setProfilePending(false);
       setUser(account);
     } catch (error) {
@@ -159,9 +226,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user,
       loading,
       profilePending,
+      signedOut,
       setSignupDraft: (draft) => {
         signupDraftRef.current = draft;
       },
+      signInWithGoogle,
       createAccount,
     }}>
       {children}
