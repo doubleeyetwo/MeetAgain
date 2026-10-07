@@ -1,4 +1,4 @@
-import { createUserWithEmailAndPassword, onAuthStateChanged, User } from 'firebase/auth';
+import { createUserWithEmailAndPassword, onAuthStateChanged, signOut as firebaseSignOut, User } from 'firebase/auth';
 import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { createContext, PropsWithChildren, useContext, useEffect, useRef, useState } from 'react';
 import { auth, db } from '@/config/firebase';
@@ -13,6 +13,7 @@ type AuthContextValue = {
   profilePending: boolean;
   setSignupDraft: (draft: SignupDraft) => void;
   createAccount: (profile: ValidProfile, photo?: ProfilePhoto) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 const AuthContext = createContext<AuthContextValue>({
   user: null,
@@ -22,6 +23,9 @@ const AuthContext = createContext<AuthContextValue>({
     throw new Error('AuthProvider is missing.');
   },
   createAccount: async () => {
+    throw new Error('AuthProvider is missing.');
+  },
+  signOut: async () => {
     throw new Error('AuthProvider is missing.');
   },
 });
@@ -154,6 +158,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   };
 
+  const signOut = async () => {
+    // Clear these before signing out so the auth listener takes its signed-out path
+    // instead of the early return that protects an in-flight signup.
+    isCreatingAccount.current = false;
+    pendingProfileUser.current = null;
+    signupDraftRef.current = null;
+    await firebaseSignOut(auth);
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -163,6 +176,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         signupDraftRef.current = draft;
       },
       createAccount,
+      signOut,
     }}>
       {children}
     </AuthContext.Provider>
