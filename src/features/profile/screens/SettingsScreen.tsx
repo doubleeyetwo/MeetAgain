@@ -115,8 +115,7 @@ export function SettingsScreen() {
             <SettingsRow
               icon="lock-closed-outline"
               label="Change Password"
-              // Destination is the Change Password frame; no issue tracks it yet.
-              onPress={() => {}}
+              onPress={() => navigation.navigate('ChangePassword')}
             />
           </SettingsCard>
 

@@ -10,6 +10,8 @@ export const colors = {
   fieldLabel: '#8cabff', // Small caption above a form field.
   linkAccent: '#9290ff', // Secondary action label, e.g. the calendar integration row.
   danger: '#ed1c1c', // Destructive actions. Named "Red" in the Figma variables.
+  success: '#32a817', // Met requirement, filled strength segment.
+  trackMuted: '#2e2936', // Unfilled track behind a progress or strength meter.
   cardLighter: '#35155d', // Lighter card surface for contrast against cardDarker.
   footer: '#17121f',
   headerFade: 'rgba(23, 18, 31, 0)', // Transparent end of the header gradient.

@@ -12,6 +12,7 @@ export type ProfileStackParamList = {
   ProfileHome: undefined;
   EditProfile: undefined;
   Settings: undefined;
+  ChangePassword: undefined;
 };
 
 export type MainTabParamList = {
