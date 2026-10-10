@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -14,9 +14,8 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '@/config/firebase';
+import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
 import { ProfileStackParamList } from '@/navigation/types';
@@ -91,7 +90,6 @@ function MemoriesGrid({ memories }: { memories: Memory[] }) {
 export function ProfileScreen() {
   const navigation = useNavigation<ProfileNavigation>();
   const { user } = useAuth();
-  const busyRef = useRef(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -120,18 +118,6 @@ export function ProfileScreen() {
       };
     }, [user]),
   );
-
-  const onSignOut = async () => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    try {
-      await signOut(auth);
-    } catch {
-      setError('Could not sign out. Please try again.');
-    } finally {
-      busyRef.current = false;
-    }
-  };
 
   const birthday = formatBirthday(profile?.dateOfBirth);
 
@@ -166,8 +152,7 @@ export function ProfileScreen() {
               accessibilityRole="button"
               accessibilityLabel="Settings"
               hitSlop={12}
-              // Destination is Settings, the next screen in this flow.
-              onPress={() => {}}
+              onPress={() => navigation.navigate('Settings')}
               style={({ pressed }) => pressed && styles.pressed}
             >
               <Ionicons name="settings-outline" size={24} color={colors.white} />
@@ -223,15 +208,6 @@ export function ProfileScreen() {
               ) : null}
 
               <MemoriesGrid memories={[]} />
-
-              {/* Temporary: sign out lives here until the Settings screen takes it over. */}
-              <Pressable
-                accessibilityRole="button"
-                onPress={onSignOut}
-                style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
-              >
-                <Text style={styles.signOutText}>Sign Out</Text>
-              </Pressable>
             </>
           )}
         </ScrollView>
@@ -305,7 +281,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   emptyMemoriesText: { ...text.body, color: colors.white, opacity: 0.6, textAlign: 'center' },
-  signOut: { marginTop: spacing.xxl, padding: spacing.sm },
-  signOutText: { ...text.body, color: colors.primaryAccent, textDecorationLine: 'underline' },
   pressed: { opacity: 0.85 },
 });

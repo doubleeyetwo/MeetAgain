@@ -8,6 +8,8 @@ export const colors = {
   primaryAccent: '#7b3ff2',
   cardDarker: '#200c38', // Darker card surface for contrast against the background.
   fieldLabel: '#8cabff', // Small caption above a form field.
+  linkAccent: '#9290ff', // Secondary action label, e.g. the calendar integration row.
+  danger: '#ed1c1c', // Destructive actions. Named "Red" in the Figma variables.
   cardLighter: '#35155d', // Lighter card surface for contrast against cardDarker.
   footer: '#17121f',
   headerFade: 'rgba(23, 18, 31, 0)', // Transparent end of the header gradient.
