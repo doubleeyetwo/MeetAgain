@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -12,13 +12,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
+import { ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { UserProfile } from '@/types/models';
+
+type ProfileNavigation = NativeStackNavigationProp<ProfileStackParamList>;
 
 // Memory tiles are 104x93 at a 367pt frame width; keep the ratio and let the row divide the width.
 const TILE_ASPECT = 104 / 93;
@@ -84,33 +89,37 @@ function MemoriesGrid({ memories }: { memories: Memory[] }) {
 }
 
 export function ProfileScreen() {
+  const navigation = useNavigation<ProfileNavigation>();
   const { user } = useAuth();
   const busyRef = useRef(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!user) return;
-    let active = true;
+  // Re-read on focus so edits made on Edit Profile are reflected when the user comes back.
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      let active = true;
 
-    (async () => {
-      try {
-        const snapshot = await getDoc(doc(db, collections.users, user.uid));
-        if (!active) return;
-        setProfile(snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as UserProfile) : null);
-      } catch {
-        if (active) setError('Could not load your profile. Pull back and try again.');
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
+      (async () => {
+        try {
+          const snapshot = await getDoc(doc(db, collections.users, user.uid));
+          if (!active) return;
+          setProfile(snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as UserProfile) : null);
+        } catch {
+          if (active) setError('Could not load your profile. Pull back and try again.');
+        } finally {
+          if (active) setLoading(false);
+        }
+      })();
 
-    // Ignore a resolved read once the screen has moved on.
-    return () => {
-      active = false;
-    };
-  }, [user]);
+      // Ignore a resolved read once the screen has moved on.
+      return () => {
+        active = false;
+      };
+    }, [user]),
+  );
 
   const onSignOut = async () => {
     if (busyRef.current) return;
@@ -147,8 +156,7 @@ export function ProfileScreen() {
               accessibilityRole="button"
               accessibilityLabel="Edit profile"
               hitSlop={12}
-              // Destination is Edit Profile (#35).
-              onPress={() => {}}
+              onPress={() => navigation.navigate('EditProfile')}
               style={({ pressed }) => pressed && styles.pressed}
             >
               <Ionicons name="create-outline" size={24} color={colors.white} />

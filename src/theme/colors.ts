@@ -7,6 +7,7 @@ export const colors = {
   purpleAccentGradientEnd: '#8e00da',
   primaryAccent: '#7b3ff2',
   cardDarker: '#200c38', // Darker card surface for contrast against the background.
+  fieldLabel: '#8cabff', // Small caption above a form field.
   cardLighter: '#35155d', // Lighter card surface for contrast against cardDarker.
   footer: '#17121f',
   headerFade: 'rgba(23, 18, 31, 0)', // Transparent end of the header gradient.

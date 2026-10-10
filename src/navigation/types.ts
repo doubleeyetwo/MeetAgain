@@ -8,6 +8,11 @@ export type AuthStackParamList = {
   CreateProfile: undefined;
   ForgotPassword: undefined;
 };
+export type ProfileStackParamList = {
+  ProfileHome: undefined;
+  EditProfile: undefined;
+};
+
 export type MainTabParamList = {
   Home: undefined;
   Messages: undefined;
