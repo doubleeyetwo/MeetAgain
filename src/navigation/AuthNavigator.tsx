@@ -10,12 +10,12 @@ import { useAuth } from '@/features/auth/AuthContext';
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export function AuthNavigator() {
-  const { profilePending, signedOut } = useAuth();
+  const { profilePending } = useAuth();
 
   // Resume incomplete account setup at its profile step after auth state is restored.
   return (
     <Stack.Navigator
-      initialRouteName={profilePending ? 'CreateProfile' : signedOut ? 'SignIn' : 'Register'}
+      initialRouteName={profilePending ? 'CreateProfile' : 'Register'}
       screenOptions={{ headerShown: false }}
     >
       <Stack.Screen name="Register" component={RegisterScreen} />

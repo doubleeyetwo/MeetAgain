@@ -15,10 +15,9 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { GoogleIcon, Logo } from '@/components/Logo';
+import { Logo } from '@/components/Logo';
 import { auth } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
-import { googleSignInError } from '@/features/auth/googleSignInError';
 import { AuthStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, sizes, spacing, text } from '@/theme';
 
@@ -26,7 +25,7 @@ type AuthNavigation = NativeStackNavigationProp<AuthStackParamList>;
 
 export function SignInScreen() {
   const navigation = useNavigation<AuthNavigation>();
-  const { profilePending, signInWithGoogle } = useAuth();
+  const { profilePending } = useAuth();
   const passwordInput = useRef<TextInput>(null);
   const busyRef = useRef(false);
   const [email, setEmail] = useState('');
@@ -85,21 +84,6 @@ export function SignInScreen() {
     }
   };
 
-  const onGoogle = async () => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      await signInWithGoogle();
-    } catch (failure) {
-      setError(googleSignInError(failure));
-    } finally {
-      busyRef.current = false;
-      setBusy(false);
-    }
-  };
-
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <StatusBar style="light" />
@@ -113,7 +97,7 @@ export function SignInScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Back to registration"
-              onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Register')}
+              onPress={() => navigation.goBack()}
               disabled={busy}
               hitSlop={12}
               style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
@@ -186,17 +170,6 @@ export function SignInScreen() {
               >
                 <Text style={styles.buttonText}>{busy ? 'Signing in...' : 'Sign Into MeetAgain'}</Text>
               </LinearGradient>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Sign in with Google"
-              onPress={onGoogle}
-              disabled={busy}
-              style={({ pressed }) => [styles.googleButton, pressed && styles.pressed]}
-            >
-              <GoogleIcon />
-              <Text style={styles.buttonText}>{busy ? 'Connecting to Google...' : 'Sign in with Google'}</Text>
             </Pressable>
 
             <Pressable
@@ -273,16 +246,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: { ...text.body, color: colors.white },
-  googleButton: {
-    height: sizes.controlHeight,
-    borderRadius: radius.sm,
-    backgroundColor: colors.cardLighter,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
   forgotLink: {
     alignSelf: 'center',
     marginTop: spacing.lg,
