@@ -4,6 +4,7 @@ import { PasswordScreen } from '@/features/auth/screens/PasswordScreen';
 import { CreateProfileScreen } from '@/features/auth/screens/CreateProfileScreen';
 import { SignInScreen } from '@/features/auth/screens/SignInScreen';
 import { ForgotPasswordScreen } from '@/features/auth/screens/ForgotPasswordScreen';
+import { ResetPasswordSentScreen } from '@/features/auth/screens/ResetPasswordSentScreen';
 import { AuthStackParamList } from './types';
 import { useAuth } from '@/features/auth/AuthContext';
 
@@ -23,6 +24,7 @@ export function AuthNavigator() {
       <Stack.Screen name="CreateProfile" component={CreateProfileScreen} />
       <Stack.Screen name="SignIn" component={SignInScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="ResetPasswordSent" component={ResetPasswordSentScreen} />
     </Stack.Navigator>
   );
 }
