@@ -9,7 +9,8 @@ import { HomeScreen } from '@/features/home/screens/HomeScreen';
 import { MessageFeedScreen } from '@/features/messages/screens/MessageFeedScreen';
 import { EventCreationNavigator } from '@/features/events/navigation/EventCreationNavigator';
 import { CalendarViewScreen } from '@/features/calendar/screens/CalendarViewScreen';
-import { ProfileNavigator } from '@/features/profile/navigation/ProfileNavigator';
+import { ProfileScreen } from '@/features/profile/screens/ProfileScreen';
+import { FriendsScreen } from '@/features/friends/screens/FriendsScreen';
 
 import { colors } from '@/theme';
 
@@ -150,7 +151,7 @@ function MainTabs() {
 
       <Tabs.Screen
         name="Profile"
-        component={ProfileNavigator}
+        component={ProfileScreen}
       />
     </Tabs.Navigator>
   );
@@ -170,6 +171,7 @@ export function AppNavigator() {
         name="MainTabs"
         component={MainTabs}
       />
+      <Stack.Screen name="Friends" component={FriendsScreen} />
     </Stack.Navigator>
   );
 }

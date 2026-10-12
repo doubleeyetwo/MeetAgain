@@ -65,6 +65,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
           pendingProfileUser.current = null;
           setProfilePending(false);
           setUser(nextUser);
+          const profile = savedProfile.data();
+          // Older username claims contain only a UID. Add the public name only when the
+          // claim still belongs to this account; a missing or conflicting claim is left alone.
+          if (typeof profile.username === 'string' && typeof profile.displayName === 'string') {
+            void runTransaction(db, async (transaction) => {
+              const usernameRef = doc(db, 'usernames', profile.username);
+              const claim = await transaction.get(usernameRef);
+              if (claim.exists() && claim.data().uid === nextUser.uid && !claim.data().displayName) {
+                transaction.update(usernameRef, { displayName: profile.displayName });
+              }
+            }).catch(() => {
+              // Directory repair is best effort and must not make a valid account unusable.
+            });
+          }
         } else {
           pendingProfileUser.current = nextUser;
           setProfilePending(true);
@@ -119,7 +133,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (usernameClaim.exists()) {
           throw new Error('That username is taken. Choose another and try again.');
         }
-        transaction.set(usernameRef, { uid: account.uid });
+        // The directory record contains only the two fields needed for discovery.
+        // Email, birth date, and photo remain in the owner-only profile document.
+        transaction.set(usernameRef, { uid: account.uid, displayName: profile.displayName });
         transaction.set(userRef, {
           id: account.uid,
           email: account.email,

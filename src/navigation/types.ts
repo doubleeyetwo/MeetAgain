@@ -25,5 +25,6 @@ export type MainTabParamList = {
 
 export type AppStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
+  Friends: undefined;
   EventDetails: { eventId: string };
 };
