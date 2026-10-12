@@ -24,6 +24,12 @@ SignInScreen calls Firebase's email/password sign-in method. AuthContext listens
 
 Older accounts with an existing profile document remain usable even if that document predates the `profileComplete` field.
 
+## Password reset
+
+The sign-in screen's "Forgot Password?" link opens **ForgotPasswordScreen** and fills in any email the user already typed. The screen checks the email format first, so a malformed address shows an error without contacting Firebase. A valid address goes to Firebase's `sendPasswordResetEmail`, and Firebase error codes become readable messages. After a successful send, **ResetPasswordSentScreen** replaces the form and links back to sign-in.
+
+The emailed link opens a page hosted by Firebase, not by the app. The user chooses a new password there; afterwards the old password fails at sign-in and the new one works. Firebase's email enumeration protection (on by default for newer projects) reports success even for unregistered addresses, so the confirmation screen says "if an account exists" and the "no account" message appears only if that protection is turned off.
+
 ## Why signup needs a transaction and retry handling
 
 Two people could choose the same username at the same time. A Firestore transaction checks `usernames/{username}` and writes both the reservation and `users/{uid}` together. The rules also require those documents to match. This makes username ownership a database decision instead of a check performed only by the form.
@@ -44,4 +50,4 @@ Keep a feature's screens and business logic in its own `src/features` folder. Sc
 
 Firestore rules are part of a feature too: a new screen does not automatically gain permission to read or write a new collection. The current rules allow the signup operations and deny unspecified access. Changes to rules must be published separately in Firebase.
 
-For a manual check, create a profile, sign out, sign in with the correct credentials, then try an incorrect password. Also try a duplicate username and retry with a different one. Verify photos and camera permissions on the iPhone. Type checking alone does not exercise those flows.
+For a manual check, create a profile, sign out, sign in with the correct credentials, then try an incorrect password. Also try a duplicate username and retry with a different one. For password reset, submit a malformed email (an error appears and nothing is sent), then request a reset for your account, set a new password from the email link, and confirm only the new password signs in. Verify photos and camera permissions on the iPhone. Type checking alone does not exercise those flows.

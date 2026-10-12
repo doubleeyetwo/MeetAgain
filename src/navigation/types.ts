@@ -6,7 +6,8 @@ export type AuthStackParamList = {
   Register: undefined;
   Password: { email: string };
   CreateProfile: undefined;
-  ForgotPassword: undefined;
+  ForgotPassword: { email?: string } | undefined;
+  ResetPasswordSent: { email: string };
 };
 export type MainTabParamList = {
   Home: undefined;
