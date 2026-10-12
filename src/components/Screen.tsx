@@ -1,13 +1,13 @@
 import { PropsWithChildren } from 'react';
 import { SafeAreaView, StyleSheet, Text } from 'react-native';
 
-type ScreenProps = PropsWithChildren<{ title: string }>;
+type ScreenProps = PropsWithChildren<{ title: string; titleColor?: string }>;
 
 // Shared scaffold for simple feature screens while their dedicated layouts are built.
-export function Screen({ title, children }: ScreenProps) {
+export function Screen({ title, titleColor, children }: ScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
+      <Text style={[styles.title, titleColor ? { color: titleColor } : null]}>{title}</Text>
       {children}
     </SafeAreaView>
   );

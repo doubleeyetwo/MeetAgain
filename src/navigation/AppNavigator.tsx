@@ -10,6 +10,7 @@ import { MessageFeedScreen } from '@/features/messages/screens/MessageFeedScreen
 import { EventCreationNavigator } from '@/features/events/navigation/EventCreationNavigator';
 import { CalendarViewScreen } from '@/features/calendar/screens/CalendarViewScreen';
 import { ProfileScreen } from '@/features/profile/screens/ProfileScreen';
+import { FriendsScreen } from '@/features/friends/screens/FriendsScreen';
 
 import { colors } from '@/theme';
 
@@ -170,6 +171,7 @@ export function AppNavigator() {
         name="MainTabs"
         component={MainTabs}
       />
+      <Stack.Screen name="Friends" component={FriendsScreen} />
     </Stack.Navigator>
   );
 }

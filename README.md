@@ -10,7 +10,21 @@ Expo + React Native + TypeScript foundation for coordinating events with friends
 - `src/types`: shared Firestore/domain models.
 - `src/data`: collection names and future repositories.
 - `src/themes`: this is where our design tokens are standardized and used across the whole app.
-- `firestore.rules`: intentionally locked starter rules; open these only as authenticated rules are implemented.
+- `firestore.rules`: authenticated profile, username directory, and friendship access rules.
+
+## Friends and Firestore rules
+
+The Profile tab opens Friends. Search uses an exact username and reads the
+public `usernames/{username}` document, which contains only a UID and display
+name. Private `users/{uid}` profiles remain owner-only. A request, decline, or
+accepted friendship uses one `friendships/{smallerUid}_{largerUid}` document;
+only its participants can list it, and only the recipient can answer a pending
+request. The original sender can retry after a decline.
+
+Existing accounts gain a public display name on their username record when
+they next sign in with the updated app. Until then, friend search and lists
+show their username as a fallback. The updated Firestore rules must be
+published before the new friend actions can work in the live app.
 
 Google OAuth and Calendar Freebusy should be added behind feature services rather than directly inside screens. Local calendar access is intentionally left as a later stretch goal.
 
