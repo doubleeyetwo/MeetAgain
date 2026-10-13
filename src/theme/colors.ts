@@ -15,6 +15,7 @@ export const colors = {
   cardLighter: '#35155d', // Lighter card surface for contrast against cardDarker.
   footer: '#17121f',
   headerFade: 'rgba(23, 18, 31, 0)', // Transparent end of the header gradient.
+  red: '#ff3131', // Bright Neon red for deletions, exits, logouts, etc
 
   // Lighter green indicates more available time.
   freeDay: {

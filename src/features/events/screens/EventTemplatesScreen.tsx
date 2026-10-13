@@ -1,3 +1,4 @@
+
 import {
   Pressable,
   ScrollView,
@@ -12,7 +13,7 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
 import { colors, fontFamily, spacing } from '@/theme';
 
-import { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
 type Props = NativeStackScreenProps<
   EventCreationStackParamList,
@@ -65,8 +66,18 @@ const EVENT_TEMPLATES = [
 ] as const;
 
 export function EventTemplatesScreen({ navigation }: Props) {
-  const openEventDetails = () => {
+  const openCustomEvent = () => {
     navigation.navigate('EventDetails');
+  };
+
+  const openPresetEvent = (
+    presetId: string,
+    category: string
+  ) => {
+    navigation.navigate('EventDetails', {
+      presetId,
+      category,
+    });
   };
 
   return (
@@ -85,7 +96,12 @@ export function EventTemplatesScreen({ navigation }: Props) {
               styles.template,
               pressed && styles.pressed,
             ]}
-            onPress={openEventDetails}
+            onPress={() =>
+              openPresetEvent(
+                template.id,
+                template.category
+              )
+            }
           >
             <View style={styles.iconContainer}>
               <Ionicons
@@ -119,7 +135,7 @@ export function EventTemplatesScreen({ navigation }: Props) {
       <View style={styles.customButtonContainer}>
         <ContinueButton
           title="Custom Event"
-          onPress={openEventDetails}
+          onPress={openCustomEvent}
         />
       </View>
     </View>
