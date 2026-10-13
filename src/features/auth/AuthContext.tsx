@@ -39,12 +39,6 @@ const AuthContext = createContext<AuthContextValue>({
   signOut: async () => {
     throw new Error('AuthProvider is missing.');
   },
-  signInWithGoogle: async () => {
-    throw new Error('AuthProvider is missing.');
-  },
-  signOut: async () => {
-    throw new Error('AuthProvider is missing.');
-  },
 });
 
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -217,8 +211,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
         signupDraftRef.current = draft;
       },
       createAccount,
-      signInWithGoogle,
-      signOut,
       signInWithGoogle,
       signOut,
     }}>

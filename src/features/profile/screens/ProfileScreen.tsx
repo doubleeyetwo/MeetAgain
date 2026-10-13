@@ -12,17 +12,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { CompositeNavigationProp, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
-import { ProfileStackParamList } from '@/navigation/types';
+import { AppStackParamList, ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { UserProfile } from '@/types/models';
 
-type ProfileNavigation = NativeStackNavigationProp<ProfileStackParamList>;
+type ProfileNavigation = CompositeNavigationProp<
+  NativeStackNavigationProp<ProfileStackParamList>,
+  NativeStackNavigationProp<AppStackParamList>
+>;
 
 // Memory tiles are 104x93 at a 367pt frame width; keep the ratio and let the row divide the width.
 const TILE_ASPECT = 104 / 93;
@@ -130,8 +133,8 @@ export function ProfileScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add friends"
             hitSlop={12}
-            // Destination is Friend Search (#42).
-            onPress={() => {}}
+            // Friends is owned by the parent app stack, so this action bubbles out of the profile stack.
+            onPress={() => navigation.navigate('Friends')}
             style={({ pressed }) => pressed && styles.pressed}
           >
             <Ionicons name="person-add-outline" size={24} color={colors.white} />
@@ -192,8 +195,8 @@ export function ProfileScreen() {
                   accessibilityRole="link"
                   accessibilityLabel="View friends list"
                   hitSlop={8}
-                  // Destination is Friends List (#41).
-                  onPress={() => {}}
+                  // The friends count opens the Friends screen registered on the parent app stack.
+                  onPress={() => navigation.navigate('Friends')}
                   style={({ pressed }) => pressed && styles.pressed}
                 >
                   <Text style={styles.statText}>0 Friends</Text>
