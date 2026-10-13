@@ -133,9 +133,23 @@ export function ForgotPasswordScreen() {
             ) : null}
 
             <Pressable
+<<<<<<< Updated upstream
               accessibilityRole="button"
               accessibilityLabel="Send password reset link"
               onPress={onSendReset}
+=======
+              accessibilityRole="link"
+              onPress={() => navigation.navigate('ResetPassword')}
+              disabled={busy}
+              style={({ pressed }) => [styles.signInLink, pressed && styles.pressed]}
+            >
+              <Text style={styles.signInText}>Already have a reset link?</Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => navigation.navigate('SignIn')}
+>>>>>>> Stashed changes
               disabled={busy}
               style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed]}
             >

@@ -26,9 +26,17 @@ Older accounts with an existing profile document remain usable even if that docu
 
 ## Password reset
 
+<<<<<<< Updated upstream
 The sign-in screen's "Forgot Password?" link opens **ForgotPasswordScreen** and fills in any email the user already typed. The screen checks the email format first, so a malformed address shows an error without contacting Firebase. A valid address goes to Firebase's `sendPasswordResetEmail`, and Firebase error codes become readable messages. After a successful send, **ResetPasswordSentScreen** replaces the form and links back to sign-in.
 
 The emailed link opens a page hosted by Firebase, not by the app. The user chooses a new password there; afterwards the old password fails at sign-in and the new one works. Firebase's email enumeration protection (on by default for newer projects) reports success even for unregistered addresses, so the confirmation screen says "if an account exists" and the "no account" message appears only if that protection is turned off.
+=======
+**ForgotPasswordScreen** calls `requestPasswordReset` in `passwordReset.ts`, which validates the email and asks Firebase to send a reset link. Sending a link can fail only for request-level reasons (bad email, network, rate limit). It never reports an expired or used link.
+
+Tapping the emailed link opens a page hosted by Firebase, not by the app. If that page says the link "has expired or has already been used", the app never sees why. Each link works once and expires after one hour. Opening an older email in the same thread is the usual cause: Gmail groups reset emails into one thread and can hide the newest link behind "show trimmed content".
+
+**ResetPasswordScreen** ("Already have a reset link?") finishes the reset inside the app instead. The user pastes the link; `checkResetLink` extracts its one-time code and calls `verifyPasswordResetCode`, which checks the code without using it up. `completePasswordReset` then calls `confirmPasswordReset` with the new password. Both map `auth/expired-action-code` and `auth/invalid-action-code` to separate messages, and a link that expires between the two steps sends the user back to paste a fresh one. The code stays in screen state only, because anyone holding a live code can set the account's password.
+>>>>>>> Stashed changes
 
 ## Why signup needs a transaction and retry handling
 
