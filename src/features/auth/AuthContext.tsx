@@ -22,8 +22,6 @@ type AuthContextValue = {
   createAccount: (profile: ValidProfile, photo?: ProfilePhoto) => Promise<void>;
   signInWithGoogle: (idToken: string) => Promise<void>;
   signOut: () => Promise<void>;
-  signInWithGoogle: (idToken: string) => Promise<void>;
-  signOut: () => Promise<void>;
 };
 const AuthContext = createContext<AuthContextValue>({
   user: null,
