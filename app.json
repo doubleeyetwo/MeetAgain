@@ -16,7 +16,8 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.meetagain.app"
     },
     "web": {
       "bundler": "metro"
@@ -31,7 +32,8 @@
             "enableSceneSupport": true
           }
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

@@ -1,6 +1,13 @@
-import { createUserWithEmailAndPassword, onAuthStateChanged, User } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signOut as firebaseSignOut,
+  signInWithCredential,
+  User,
+} from 'firebase/auth';
 import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { createContext, PropsWithChildren, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { auth, db } from '@/config/firebase';
 import { PROFILE_PHOTO_JPEG_PREFIX, PROFILE_PHOTO_MAX_DATA_URL_LENGTH } from './profilePhoto';
 import { ValidProfile } from './profileValidation';
@@ -13,6 +20,8 @@ type AuthContextValue = {
   profilePending: boolean;
   setSignupDraft: (draft: SignupDraft) => void;
   createAccount: (profile: ValidProfile, photo?: ProfilePhoto) => Promise<void>;
+  signInWithGoogle: (idToken: string) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 const AuthContext = createContext<AuthContextValue>({
   user: null,
@@ -22,6 +31,12 @@ const AuthContext = createContext<AuthContextValue>({
     throw new Error('AuthProvider is missing.');
   },
   createAccount: async () => {
+    throw new Error('AuthProvider is missing.');
+  },
+  signInWithGoogle: async () => {
+    throw new Error('AuthProvider is missing.');
+  },
+  signOut: async () => {
     throw new Error('AuthProvider is missing.');
   },
 });
@@ -170,6 +185,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   };
 
+  // Google returns an ID token; Firebase turns it into a session. Routing is left
+  // to the listener above, which sends a user without a profile document into setup
+  // and everyone else to Home, exactly as it does for email signups.
+  const signInWithGoogle = useCallback(async (idToken: string) => {
+    const credential = GoogleAuthProvider.credential(idToken);
+    await signInWithCredential(auth, credential);
+  }, []);
+
+  const signOut = async () => {
+    // Clear these before signing out so the auth listener takes its signed-out path
+    // instead of the early return that protects an in-flight signup.
+    isCreatingAccount.current = false;
+    pendingProfileUser.current = null;
+    signupDraftRef.current = null;
+    await firebaseSignOut(auth);
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -179,6 +211,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         signupDraftRef.current = draft;
       },
       createAccount,
+      signInWithGoogle,
+      signOut,
     }}>
       {children}
     </AuthContext.Provider>

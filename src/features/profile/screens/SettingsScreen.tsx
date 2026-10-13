@@ -6,8 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/config/firebase';
+import { useAuth } from '@/features/auth/AuthContext';
 import { ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, spacing, text } from '@/theme';
 
@@ -67,6 +66,7 @@ function PillButton({ label, color, onPress, icon }: PillProps) {
 
 export function SettingsScreen() {
   const navigation = useNavigation<ProfileNavigation>();
+  const { signOut } = useAuth();
   const busyRef = useRef(false);
   const [error, setError] = useState('');
 
@@ -76,7 +76,7 @@ export function SettingsScreen() {
     busyRef.current = true;
     setError('');
     try {
-      await signOut(auth);
+      await signOut();
     } catch {
       setError('Could not log out. Please try again.');
     } finally {
