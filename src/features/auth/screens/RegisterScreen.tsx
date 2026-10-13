@@ -18,8 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, gradients, gradientDirection, spacing, radius, sizes, text } from '@/theme';
 import { Logo, GoogleIcon } from '@/components/Logo';
 import { AuthStackParamList } from '@/navigation/types';
-import { useGoogleSignIn } from '@/features/auth/googleAuth';
-import { useAuth } from '@/features/auth/AuthContext';
 
 const TERMS_URL = 'https://example.com/terms'; // TODO: replace
 const PRIVACY_URL = 'https://example.com/privacy'; // TODO: replace

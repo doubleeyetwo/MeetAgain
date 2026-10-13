@@ -22,6 +22,8 @@ type AuthContextValue = {
   createAccount: (profile: ValidProfile, photo?: ProfilePhoto) => Promise<void>;
   signInWithGoogle: (idToken: string) => Promise<void>;
   signOut: () => Promise<void>;
+  signInWithGoogle: (idToken: string) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 const AuthContext = createContext<AuthContextValue>({
   user: null,
@@ -31,6 +33,12 @@ const AuthContext = createContext<AuthContextValue>({
     throw new Error('AuthProvider is missing.');
   },
   createAccount: async () => {
+    throw new Error('AuthProvider is missing.');
+  },
+  signInWithGoogle: async () => {
+    throw new Error('AuthProvider is missing.');
+  },
+  signOut: async () => {
     throw new Error('AuthProvider is missing.');
   },
   signInWithGoogle: async () => {
@@ -211,6 +219,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         signupDraftRef.current = draft;
       },
       createAccount,
+      signInWithGoogle,
+      signOut,
       signInWithGoogle,
       signOut,
     }}>
