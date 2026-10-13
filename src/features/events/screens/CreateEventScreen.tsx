@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -9,10 +10,18 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
 import { colors, fontFamily, radius, spacing } from '@/theme';
+
+import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+
+type Props = NativeStackScreenProps<
+  EventCreationStackParamList,
+  'EventDetails'
+>;
 
 const EVENT_CATEGORIES = [
   'Food & Dining',
@@ -23,17 +32,39 @@ const EVENT_CATEGORIES = [
   'Other',
 ];
 
-export function CreateEventScreen() {
+export function CreateEventScreen({
+  navigation,
+  route,
+}: Props) {
   const [eventName, setEventName] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState(
+    route.params?.category ?? ''
+  );
+  const [customCategory, setCustomCategory] = useState('');
   const [showCategories, setShowCategories] = useState(false);
+
+  const resolvedCategory =
+    category === 'Other'
+      ? customCategory.trim()
+      : category;
+
+  const handleConfirmDetails = () => {
+    navigation.navigate('ReviewEvent', {
+      eventName: eventName.trim(),
+      category: resolvedCategory,
+      presetId: route.params?.presetId,
+    });
+  };
 
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenHeader title="Add Custom Event" />
+      <ScreenHeader
+        title="Add Custom Event"
+        onBack={() => navigation.goBack()}
+      />
 
       <View style={styles.content}>
         <Pressable style={styles.photoArea}>
@@ -60,7 +91,9 @@ export function CreateEventScreen() {
           <View style={styles.categoryWrapper}>
             <Pressable
               style={styles.categoryField}
-              onPress={() => setShowCategories((current) => !current)}
+              onPress={() =>
+                setShowCategories((current) => !current)
+              }
             >
               <Text
                 style={[
@@ -72,7 +105,11 @@ export function CreateEventScreen() {
               </Text>
 
               <Ionicons
-                name={showCategories ? 'chevron-up' : 'chevron-down'}
+                name={
+                  showCategories
+                    ? 'chevron-up'
+                    : 'chevron-down'
+                }
                 size={20}
                 color={colors.white}
               />
@@ -89,10 +126,23 @@ export function CreateEventScreen() {
                       setShowCategories(false);
                     }}
                   >
-                    <Text style={styles.dropdownText}>{item}</Text>
+                    <Text style={styles.dropdownText}>
+                      {item}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
+            )}
+
+            {category === 'Other' && (
+              <TextInput
+                value={customCategory}
+                onChangeText={setCustomCategory}
+                placeholder="Enter Custom Category"
+                placeholderTextColor={colors.white}
+                style={styles.customCategoryInput}
+                autoCapitalize="words"
+              />
             )}
           </View>
         </View>
@@ -100,9 +150,7 @@ export function CreateEventScreen() {
         <View style={styles.continueContainer}>
           <ContinueButton
             title="Confirm Details"
-            onPress={() => {
-              // Navigation will be connected next.
-            }}
+            onPress={handleConfirmDetails}
           />
         </View>
       </View>
@@ -209,6 +257,19 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontFamily: fontFamily.regular,
     fontSize: 14,
+  },
+
+  customCategoryInput: {
+    width: '100%',
+    height: 50,
+    marginTop: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.cardDarker,
+    paddingHorizontal: spacing.md,
+    color: colors.white,
+    fontFamily: fontFamily.regular,
+    fontSize: 14,
+    textAlign: 'center',
   },
 
   continueContainer: {
