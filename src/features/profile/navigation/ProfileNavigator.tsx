@@ -4,6 +4,7 @@ import { ProfileScreen } from '@/features/profile/screens/ProfileScreen';
 import { EditProfileScreen } from '@/features/profile/screens/EditProfileScreen';
 import { SettingsScreen } from '@/features/profile/screens/SettingsScreen';
 import { ChangePasswordScreen } from '@/features/profile/screens/ChangePasswordScreen';
+import { OtherProfileScreen } from '@/features/profile/screens/OtherProfileScreen';
 import { ProfileStackParamList } from '@/navigation/types';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -19,6 +20,7 @@ export function ProfileNavigator() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+      <Stack.Screen name="OtherProfile" component={OtherProfileScreen} />
     </Stack.Navigator>
   );
 }

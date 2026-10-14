@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BlurView } from 'expo-blur';
 import {
   ActivityIndicator,
@@ -25,7 +25,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { AppStackParamList, ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { UserProfile } from '@/types/models';
-import { findUserByUsername, PublicUser, } from '@/features/friends/friendships';
+import { findUserByUsername } from '@/features/friends/friendships';
 
 type ProfileNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<ProfileStackParamList>,
@@ -105,9 +105,17 @@ export function ProfileScreen() {
   const [usernameQuery, setUsernameQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
-  const [foundUser, setFoundUser] = useState<PublicUser | null>(null);
   const searchSequence = useRef(0);
+  const pendingProfileUid = useRef<string | null>(null);
   const usernameInput = useRef<TextInput>(null);
+
+  // Queue navigation after the render that sets the search modal to hidden.
+  useEffect(() => {
+    if (usernameModalVisible || !pendingProfileUid.current) return;
+    const uid = pendingProfileUid.current;
+    pendingProfileUid.current = null;
+    navigation.navigate('OtherProfile', { uid });
+  }, [usernameModalVisible, navigation]);
 
   // Every dismissal shares one handler so it hides the native keyboard and clears the draft.
   const closeUsernameModal = useCallback(() => {
@@ -118,7 +126,6 @@ export function ProfileScreen() {
     // Clear lookup feedback as well as the text so reopening starts with a fresh overlay.
     setSearching(false);
     setSearchError('');
-    setFoundUser(null);
     setUsernameModalVisible(false);
   }, []);
 
@@ -158,10 +165,9 @@ export function ProfileScreen() {
 
     setSearching(true);
     setSearchError('');
-    setFoundUser(null);
 
     try {
-      // Perform one awaited username lookup and store its result.
+      // Resolve the exact username before choosing the destination UID.
       const result = await findUserByUsername(usernameQuery);
       // The overlay closed or another search started while we waited.
       if (sequence !== searchSequence.current) return;
@@ -172,8 +178,10 @@ export function ProfileScreen() {
         return;
       }
 
-      // Otherwise, store the matched user.
-      setFoundUser(result);
+      // A successful exact match is the selected destination; close the overlay
+      // before navigating so the transparent modal cannot cover the profile.
+      pendingProfileUid.current = result.uid;
+      closeUsernameModal();
     } catch {
       // The overlay closed or another search started while we waited.
       if (sequence !== searchSequence.current) return;
@@ -217,11 +225,9 @@ export function ProfileScreen() {
                   // Store the new text so the input reflects what the user typed.
                   setUsernameQuery(value);
 
-                  // Previous feedback and matches belong to the old username.
+                  // Previous feedback belongs to the old username.
                   // Clear searchError.
                   setSearchError('');
-                  // Clear foundUser.
-                  setFoundUser(null);
                 }}
                 onSubmitEditing={() => {
                   // Dismiss the keyboard when the user submits.

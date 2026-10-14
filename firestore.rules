@@ -137,6 +137,13 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 
+      // Either participant may unfriend. Pending and declined requests cannot
+      // be deleted through this permission, and outsiders cannot remove a pair.
+      allow delete: if request.auth != null
+        && validPair(resource.data)
+        && resource.data.status == 'accepted'
+        && request.auth.uid in resource.data.memberIds;
+
       // Participants and usernames cannot be changed after creation.
       // Only the recipient can accept or decline a pending request.
       // The original sender can resend a declined request.
