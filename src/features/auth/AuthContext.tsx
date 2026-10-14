@@ -136,6 +136,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       const userRef = doc(db, 'users', account.uid);
       const usernameRef = doc(db, 'usernames', profile.username);
+      // Public details use the same account UID as the private profile.
+      const publicProfileRef = doc(db, 'publicProfiles', account.uid);
       // Auth account creation happens separately; this transaction keeps the username claim and profile atomic.
       await runTransaction(db, async (transaction) => {
         const existingProfile = await transaction.get(userRef);
@@ -148,8 +150,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (usernameClaim.exists()) {
           throw new Error('That username is taken. Choose another and try again.');
         }
-        // The directory record contains only the two fields needed for discovery.
-        // Email, birth date, and photo remain in the owner-only profile document.
+        // Keep the username directory minimal; public profile details live in publicProfiles.
+        // Email stays owner-only, while birthday and photo are copied to the public profile.
         transaction.set(usernameRef, { uid: account.uid, displayName: profile.displayName });
         transaction.set(userRef, {
           id: account.uid,
@@ -160,6 +162,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
           username: profile.username,
           dateOfBirth: profile.dateOfBirth,
           profileComplete: true,
+          ...(photo ? { photoDataUrl: photo.dataUrl } : {}),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        // Save public details atomically with the profile and username claim.
+        // Explicit fields keep email and private account data out.
+        transaction.set(publicProfileRef, {
+          id: account.uid,
+          displayName: profile.displayName,
+          username: profile.username,
+          dateOfBirth: profile.dateOfBirth,
           ...(photo ? { photoDataUrl: photo.dataUrl } : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
