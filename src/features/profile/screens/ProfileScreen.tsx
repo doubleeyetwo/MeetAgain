@@ -319,7 +319,7 @@ export function ProfileScreen() {
                   accessibilityRole="link"
                   accessibilityLabel="View friends list"
                   hitSlop={8}
-                  // The friends count opens the Friends screen registered on the parent app stack.
+                  // Keep the friends list in this tab so its bottom navigation stays visible.
                   onPress={() => navigation.navigate('Friends')}
                   style={({ pressed }) => pressed && styles.pressed}
                 >

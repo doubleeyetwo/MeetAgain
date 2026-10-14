@@ -11,6 +11,7 @@ export type AuthStackParamList = {
 };
 export type ProfileStackParamList = {
   ProfileHome: undefined;
+  Friends: undefined;
   EditProfile: undefined;
   Settings: undefined;
   ChangePassword: undefined;
@@ -27,6 +28,5 @@ export type MainTabParamList = {
 
 export type AppStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
-  Friends: undefined;
   EventDetails: { eventId: string };
 };
