@@ -174,7 +174,7 @@ export function SignInScreen() {
 
             <Pressable
               accessibilityRole="link"
-              onPress={() => navigation.navigate('ForgotPassword', { email: email.trim() })}
+              onPress={() => navigation.navigate('ForgotPassword')}
               disabled={busy}
               style={({ pressed }) => [styles.forgotLink, pressed && styles.pressed]}
             >
