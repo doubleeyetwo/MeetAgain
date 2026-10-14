@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
@@ -18,6 +19,7 @@ import { Logo } from '@/components/Logo';
 import { colors, gradientDirection, gradients, radius, sizes, spacing, text } from '@/theme';
 import { AuthStackParamList } from '@/navigation/types';
 import { useAuth } from '@/features/auth/AuthContext';
+import { PASSWORD_REQUIREMENTS } from '@/features/auth/passwordRules';
 
 type PasswordRoute = RouteProp<AuthStackParamList, 'Password'>;
 type AuthNavigation = NativeStackNavigationProp<AuthStackParamList>;
@@ -29,8 +31,8 @@ export function PasswordScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const onContinue = () => {
-    if (password.length < 8) {
-      setError('Use at least 8 characters for your password.');
+    if (PASSWORD_REQUIREMENTS.some((requirement) => !requirement.test(password))) {
+      setError('Your password does not meet the requirements above.');
       return;
     }
     setError('');
@@ -84,6 +86,23 @@ export function PasswordScreen() {
               onSubmitEditing={onContinue}
               style={styles.input}
             />
+
+            <View style={styles.requirements}>
+              <Text style={styles.requirementsTitle}>Your password must have:</Text>
+              {PASSWORD_REQUIREMENTS.map((requirement) => {
+                const met = requirement.test(password);
+                return (
+                  <View key={requirement.label} style={styles.requirement}>
+                    <Ionicons
+                      name={met ? 'checkmark-circle' : 'close-circle'}
+                      size={24}
+                      color={met ? colors.success : colors.trackMuted}
+                    />
+                    <Text style={styles.requirementLabel}>{requirement.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
 
             {error ? (
               <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
@@ -152,6 +171,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.white,
   },
+  
+  requirements: { marginTop: spacing.md },
+  requirementsTitle: { ...text.body, fontSize: 16, lineHeight: 22, color: colors.white },
+  requirement: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingLeft: spacing.sm,
+  },
+  requirementLabel: { ...text.body, fontSize: 17, color: colors.white },
   error: {
     ...text.body,
     color: '#ff9aa8',
