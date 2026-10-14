@@ -7,7 +7,7 @@ import {
   User,
 } from 'firebase/auth';
 import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { createContext, PropsWithChildren, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { auth, db } from '@/config/firebase';
 import { PROFILE_PHOTO_JPEG_PREFIX, PROFILE_PHOTO_MAX_DATA_URL_LENGTH } from './profilePhoto';
 import { ValidProfile } from './profileValidation';
@@ -80,6 +80,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
           pendingProfileUser.current = null;
           setProfilePending(false);
           setUser(nextUser);
+          const profile = savedProfile.data();
+          // Older username claims contain only a UID. Add the public name only when the
+          // claim still belongs to this account; a missing or conflicting claim is left alone.
+          if (typeof profile.username === 'string' && typeof profile.displayName === 'string') {
+            void runTransaction(db, async (transaction) => {
+              const usernameRef = doc(db, 'usernames', profile.username);
+              const claim = await transaction.get(usernameRef);
+              if (claim.exists() && claim.data().uid === nextUser.uid && !claim.data().displayName) {
+                transaction.update(usernameRef, { displayName: profile.displayName });
+              }
+            }).catch(() => {
+              // Directory repair is best effort and must not make a valid account unusable.
+            });
+          }
         } else {
           pendingProfileUser.current = nextUser;
           setProfilePending(true);
@@ -122,6 +136,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       const userRef = doc(db, 'users', account.uid);
       const usernameRef = doc(db, 'usernames', profile.username);
+      // Public details use the same account UID as the private profile.
+      const publicProfileRef = doc(db, 'publicProfiles', account.uid);
       // Auth account creation happens separately; this transaction keeps the username claim and profile atomic.
       await runTransaction(db, async (transaction) => {
         const existingProfile = await transaction.get(userRef);
@@ -134,7 +150,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (usernameClaim.exists()) {
           throw new Error('That username is taken. Choose another and try again.');
         }
-        transaction.set(usernameRef, { uid: account.uid });
+        // Keep the username directory minimal; public profile details live in publicProfiles.
+        // Email stays owner-only, while birthday and photo are copied to the public profile.
+        transaction.set(usernameRef, { uid: account.uid, displayName: profile.displayName });
+        transaction.set(doc(db, 'friendCounts', account.uid), { count: 0 });
         transaction.set(userRef, {
           id: account.uid,
           email: account.email,
@@ -144,6 +163,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
           username: profile.username,
           dateOfBirth: profile.dateOfBirth,
           profileComplete: true,
+          ...(photo ? { photoDataUrl: photo.dataUrl } : {}),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        // Save public details atomically with the profile and username claim.
+        // Explicit fields keep email and private account data out.
+        transaction.set(publicProfileRef, {
+          id: account.uid,
+          displayName: profile.displayName,
+          username: profile.username,
+          dateOfBirth: profile.dateOfBirth,
           ...(photo ? { photoDataUrl: photo.dataUrl } : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -172,10 +202,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // Google returns an ID token; Firebase turns it into a session. Routing is left
   // to the listener above, which sends a user without a profile document into setup
   // and everyone else to Home, exactly as it does for email signups.
-  const signInWithGoogle = async (idToken: string) => {
+  const signInWithGoogle = useCallback(async (idToken: string) => {
     const credential = GoogleAuthProvider.credential(idToken);
     await signInWithCredential(auth, credential);
-  };
+  }, []);
 
   const signOut = async () => {
     // Clear these before signing out so the auth listener takes its signed-out path

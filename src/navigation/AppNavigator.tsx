@@ -150,6 +150,7 @@ function MainTabs() {
 
       <Tabs.Screen
         name="Profile"
+        // Profile screens live in their own stack so profile actions stay within this tab.
         component={ProfileNavigator}
       />
     </Tabs.Navigator>

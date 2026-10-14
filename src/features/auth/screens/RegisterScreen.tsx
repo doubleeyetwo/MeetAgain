@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Linking,
@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, gradients, gradientDirection, spacing, radius, sizes, text } from '@/theme';
 import { Logo, GoogleIcon } from '@/components/Logo';
 import { AuthStackParamList } from '@/navigation/types';
+import { useAuth } from '@/features/auth/AuthContext';
 import { useGoogleSignIn } from '@/features/auth/googleAuth';
 
 const TERMS_URL = 'https://example.com/terms'; // TODO: replace
@@ -27,6 +28,13 @@ export function RegisterScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  const { profilePending } = useAuth();
+
+  useEffect(() => {
+    // The auth stack is already mounted when Google returns. Move a new
+    // account into setup once the profile gate identifies its missing profile.
+    if (profilePending) navigation.navigate('CreateProfile');
+  }, [navigation, profilePending]);
 
   const onContinue = () => {
     // Trim before passing the email between screens so signup uses the same normalized value.
