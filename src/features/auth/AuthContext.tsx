@@ -153,6 +153,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // Keep the username directory minimal; public profile details live in publicProfiles.
         // Email stays owner-only, while birthday and photo are copied to the public profile.
         transaction.set(usernameRef, { uid: account.uid, displayName: profile.displayName });
+        transaction.set(doc(db, 'friendCounts', account.uid), { count: 0 });
         transaction.set(userRef, {
           id: account.uid,
           email: account.email,

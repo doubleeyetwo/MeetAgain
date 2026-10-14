@@ -14,6 +14,9 @@ Expo + React Native + TypeScript foundation for coordinating events with friends
 
 ## Friends and Firestore rules
 
+Profile friend totals and the required backend deployment/backfill are documented
+in [Friend counts](docs/friend-counts.md).
+
 The Profile tab opens Friends. Search uses an exact username and reads the
 public `usernames/{username}` document, which contains only a UID and display
 name. Private `users/{uid}` profiles remain owner-only. A request, decline, or

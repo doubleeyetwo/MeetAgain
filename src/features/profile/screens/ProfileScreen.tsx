@@ -26,6 +26,7 @@ import { AppStackParamList, ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { UserProfile } from '@/types/models';
 import { findUserByUsername } from '@/features/friends/friendships';
+import { useFriendCount } from '@/features/friends/useFriendCount';
 
 type ProfileNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<ProfileStackParamList>,
@@ -98,6 +99,7 @@ function MemoriesGrid({ memories }: { memories: Memory[] }) {
 export function ProfileScreen() {
   const navigation = useNavigation<ProfileNavigation>();
   const { user } = useAuth();
+  const friendCount = useFriendCount(user?.uid, user?.uid);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -312,7 +314,7 @@ export function ProfileScreen() {
               {profile?.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
 
               <View style={styles.stats}>
-                {/* Counts have no source yet: memories arrive with the events query, friends with #41. */}
+                {/* Posts will be connected when the memories query is implemented. */}
                 <Text style={styles.statText}>0 posts</Text>
                 <Text style={styles.statDot}>·</Text>
                 <Pressable
@@ -323,8 +325,13 @@ export function ProfileScreen() {
                   onPress={() => navigation.navigate('Friends')}
                   style={({ pressed }) => pressed && styles.pressed}
                 >
-                  <Text style={styles.statText}>0 Friends</Text>
+                  <Text style={styles.statText} accessibilityLiveRegion="polite">{friendCount.label}</Text>
                 </Pressable>
+                {friendCount.error ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel="Retry friend count" onPress={friendCount.retry} hitSlop={8}>
+                    <Ionicons name="refresh" size={16} color={colors.white} />
+                  </Pressable>
+                ) : null}
               </View>
 
               {birthday ? <Text style={styles.birthday}>{birthday}</Text> : null}

@@ -11,7 +11,7 @@ service cloud.firestore {
       }
       function validCompletedProfile() {
         return request.resource.data.keys().hasAll(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'bio', 'photoDataUrl', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'bio', 'bio', 'photoDataUrl', 'createdAt', 'updatedAt'])
         && request.resource.data.firstName is string
         && request.resource.data.firstName.size() > 0
         && request.resource.data.firstName.size() <= 80
@@ -71,9 +71,7 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data.get('photoDataUrl', '') == request.resource.data.get('photoDataUrl', '')));
     }
     match /publicProfiles/{userId} {
-      // Other signed-in people open a profile by its exact UID.
       allow get: if request.auth != null;
-
       function matchesPrivateProfile() {
         let profile = getAfter(/databases/$(database)/documents/users/$(userId)).data;
         return request.resource.data.id == userId
@@ -112,8 +110,6 @@ service cloud.firestore {
           ))
           && matchesPrivateProfile();
       }
-      // A later-created public profile keeps its own creation date when edited.
-      // New public documents still use the private profile's original date.
       allow create: if validPublicProfile()
         && request.resource.data.createdAt == getAfter(/databases/$(database)/documents/users/$(userId)).data.createdAt;
       allow update: if validPublicProfile()
@@ -151,7 +147,47 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == username
         && request.resource.data.displayName == getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName;
     }
+    // Only totals are readable; friendship records remain participant-only.
+    match /friendCounts/{userId} {
+      allow get: if request.auth != null;
+      // Existing accounts require a trusted backfill, never a client baseline.
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !exists(/databases/$(database)/documents/users/$(userId))
+        && existsAfter(/databases/$(database)/documents/users/$(userId))
+        && request.resource.data.keys().hasOnly(['count'])
+        && request.resource.data.count == 0;
+
+      function validCountChange() {
+        let pairId = request.resource.data.lastPairId;
+        let pairPath = /databases/$(database)/documents/friendships/$(pairId);
+        let before = get(pairPath).data;
+        return request.resource.data.keys().hasAll(['count', 'lastPairId'])
+          && request.resource.data.keys().hasOnly(['count', 'lastPairId'])
+          && request.resource.data.count is int
+          && request.resource.data.count >= 0
+          && userId in before.memberIds
+          && request.auth.uid in before.memberIds
+          && (
+            (before.status == 'pending'
+              && request.auth.uid == before.recipientId
+              && getAfter(pairPath).data.status == 'accepted'
+              && request.resource.data.count == resource.data.count + 1)
+            || (before.status == 'accepted' && !existsAfter(pairPath)
+              && request.resource.data.count == resource.data.count - 1)
+          );
+      }
+      allow update: if request.auth != null && validCountChange();
+    }
     match /friendships/{friendshipId} {
+      function countChanged(uid, delta) {
+        let path = /databases/$(database)/documents/friendCounts/$(uid);
+        return getAfter(path).data.count == get(path).data.count + delta
+          && getAfter(path).data.lastPairId == friendshipId;
+      }
+      function bothCountsChanged(delta) {
+        return countChanged(resource.data.memberIds[0], delta)
+          && countChanged(resource.data.memberIds[1], delta);
+      }
       // Every pair has two distinct UIDs in sorted order.
       // The document ID uses that same order to prevent duplicates.
       function validPair(data) {
@@ -218,7 +254,8 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && validPair(resource.data)
         && resource.data.status == 'accepted'
-        && request.auth.uid in resource.data.memberIds;
+        && request.auth.uid in resource.data.memberIds
+        && bothCountsChanged(-1);
 
       // Participants and usernames cannot be changed after creation.
       // Only the recipient can accept or decline a pending request.
@@ -232,6 +269,7 @@ service cloud.firestore {
             resource.data.status == 'pending'
             && request.auth.uid == resource.data.recipientId
             && request.resource.data.status in ['accepted', 'declined']
+            && (request.resource.data.status == 'declined' || bothCountsChanged(1))
           )
           || (
             resource.data.status == 'declined'
