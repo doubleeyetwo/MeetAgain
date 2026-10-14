@@ -6,7 +6,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  updateDoc,
+  Transaction,
   where,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
@@ -99,11 +99,31 @@ export async function respondToFriendRequest(
   if (friendship.recipientId !== recipientUid || friendship.status !== 'pending') {
     throw new Error('Only the recipient can answer a pending request.');
   }
-  // Security rules repeat these checks against the current server document.
-  await updateDoc(doc(db, 'friendships', friendship.id), {
-    status: response,
-    updatedAt: serverTimestamp(),
+  await runTransaction(db, async (transaction) => {
+    const pairRef = doc(db, 'friendships', friendship.id);
+    const snapshot = await transaction.get(pairRef);
+    const current = snapshot.data();
+    if (!current || current.recipientId !== recipientUid || current.status !== 'pending') {
+      throw new Error('This request is no longer pending.');
+    }
+    if (response === 'accepted') {
+      await updateFriendCounts(transaction, { id: snapshot.id, ...current } as Friendship, 1);
+    }
+    transaction.update(pairRef, { status: response, updatedAt: serverTimestamp() });
   });
+}
+
+async function updateFriendCounts(transaction: Transaction, friendship: Friendship, delta: 1 | -1) {
+  const refs = friendship.memberIds.map((uid) => doc(db, 'friendCounts', uid));
+  const summaries = await Promise.all(refs.map((ref) => transaction.get(ref)));
+  const counts = summaries.map((snapshot) => snapshot.data()?.count as unknown);
+  if (counts.some((count) => typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0 || count + delta < 0)) {
+    throw new Error('Friend counts need to be initialized by the project administrator. Please try again after setup.');
+  }
+  refs.forEach((ref, index) => transaction.update(ref, {
+    count: (counts[index] as number) + delta,
+    lastPairId: friendship.id,
+  }));
 }
 
 export async function removeFriendship(friendship: Friendship, actingUid: string): Promise<void> {
@@ -117,6 +137,7 @@ export async function removeFriendship(friendship: Friendship, actingUid: string
     if (current.status !== 'accepted' || !Array.isArray(current.memberIds) || !current.memberIds.includes(actingUid)) {
       throw new Error('Only a friend can remove an accepted friendship.');
     }
+    await updateFriendCounts(transaction, { id: snapshot.id, ...current } as Friendship, -1);
     transaction.delete(relationshipRef);
   });
 }

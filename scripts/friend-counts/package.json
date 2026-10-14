@@ -1,0 +1,12 @@
+{
+  "name": "meetagain-friend-count-maintenance",
+  "private": true,
+  "main": "counts.js",
+  "scripts": {
+    "test": "node --test",
+    "backfill": "node backfill.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}

@@ -11,7 +11,7 @@ service cloud.firestore {
       }
       function validCompletedProfile() {
         return request.resource.data.keys().hasAll(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'photoDataUrl', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['id', 'email', 'firstName', 'lastName', 'displayName', 'username', 'dateOfBirth', 'profileComplete', 'bio', 'photoDataUrl', 'createdAt', 'updatedAt'])
         && request.resource.data.firstName is string
         && request.resource.data.firstName.size() > 0
         && request.resource.data.firstName.size() <= 80
@@ -24,6 +24,9 @@ service cloud.firestore {
         && request.resource.data.dateOfBirth is string
         && request.resource.data.dateOfBirth.matches('^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])$')
         && request.resource.data.profileComplete == true
+        && (!request.resource.data.keys().hasAny(['bio']) || (
+          request.resource.data.bio is string && request.resource.data.bio.size() <= 300
+        ))
         && (!request.resource.data.keys().hasAny(['photoDataUrl']) || (
           request.resource.data.photoDataUrl is string
           && request.resource.data.photoDataUrl.size() <= 200023
@@ -41,9 +44,77 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time)
           || (validCompletedProfile() && request.resource.data.createdAt == request.time));
       allow update: if validIdentity()
-        && resource.data.profileComplete == false
         && request.resource.data.createdAt == resource.data.createdAt
-        && validCompletedProfile();
+        && ((resource.data.get('profileComplete', true) == false && validCompletedProfile())
+          || (resource.data.get('profileComplete', true) == true
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['firstName', 'lastName', 'displayName', 'bio', 'photoDataUrl', 'updatedAt'])
+            && request.resource.data.firstName is string
+            && request.resource.data.firstName.size() > 0
+            && request.resource.data.firstName.size() <= 80
+            && request.resource.data.lastName is string
+            && request.resource.data.lastName.size() > 0
+            && request.resource.data.lastName.size() <= 80
+            && request.resource.data.displayName == request.resource.data.firstName + ' ' + request.resource.data.lastName
+            && request.resource.data.bio is string
+            && request.resource.data.bio.size() <= 300
+            && (!request.resource.data.keys().hasAny(['photoDataUrl']) || (
+              request.resource.data.photoDataUrl is string
+              && request.resource.data.photoDataUrl.size() <= 200023
+              && request.resource.data.photoDataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+            ))
+            && request.resource.data.updatedAt == request.time
+            && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == userId
+            && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.displayName == request.resource.data.displayName
+            && getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data.displayName == request.resource.data.displayName
+            && getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data.get('bio', '') == request.resource.data.bio
+            && getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data.get('photoDataUrl', '') == request.resource.data.get('photoDataUrl', '')));
+    }
+    match /publicProfiles/{userId} {
+      allow get: if request.auth != null;
+      function matchesPrivateProfile() {
+        let profile = getAfter(/databases/$(database)/documents/users/$(userId)).data;
+        return request.resource.data.id == userId
+          && request.resource.data.displayName == profile.displayName
+          && request.resource.data.username == profile.username
+          && request.resource.data.get('dateOfBirth', '') == profile.get('dateOfBirth', '')
+          && request.resource.data.get('bio', '') == profile.get('bio', '')
+          && request.resource.data.get('photoDataUrl', '') == profile.get('photoDataUrl', '')
+          && request.resource.data.get('photoURL', '') == profile.get('photoURL', '')
+          && request.resource.data.updatedAt == profile.updatedAt;
+      }
+      function validPublicProfile() {
+        return request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['id', 'displayName', 'username', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['id', 'displayName', 'username', 'dateOfBirth', 'bio', 'photoURL', 'photoDataUrl', 'createdAt', 'updatedAt'])
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 161
+          && request.resource.data.username is string
+          && request.resource.data.username.matches('^[a-z0-9_]{3,20}$')
+          && (!request.resource.data.keys().hasAny(['dateOfBirth']) || (
+            request.resource.data.dateOfBirth is string
+            && request.resource.data.dateOfBirth.matches('^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])$')
+          ))
+          && (!request.resource.data.keys().hasAny(['bio']) || (
+            request.resource.data.bio is string && request.resource.data.bio.size() <= 300
+          ))
+          && (!request.resource.data.keys().hasAny(['photoURL']) || (
+            request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 2048
+          ))
+          && (!request.resource.data.keys().hasAny(['photoDataUrl']) || (
+            request.resource.data.photoDataUrl is string
+            && request.resource.data.photoDataUrl.size() <= 200023
+            && request.resource.data.photoDataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+          ))
+          && matchesPrivateProfile();
+      }
+      allow create: if validPublicProfile()
+        && request.resource.data.createdAt == getAfter(/databases/$(database)/documents/users/$(userId)).data.createdAt;
+      allow update: if validPublicProfile()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'bio', 'photoDataUrl', 'updatedAt']);
     }
     match /usernames/{username} {
       // Signed-in users can look up an exact username.
@@ -66,16 +137,58 @@ service cloud.firestore {
       // The owner can add a missing display name to an older record.
       // The UID stays unchanged, and the name must match their profile.
       allow update: if request.auth != null
-        && resource.data.keys().hasOnly(['uid'])
+        && resource.data.keys().hasAll(['uid'])
+        && resource.data.keys().hasOnly(['uid', 'displayName'])
         && resource.data.uid == request.auth.uid
         && request.resource.data.keys().hasAll(['uid', 'displayName'])
         && request.resource.data.keys().hasOnly(['uid', 'displayName'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.displayName is string
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == username
-        && request.resource.data.displayName == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName;
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == username
+        && request.resource.data.displayName == getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName;
+    }
+    // Only totals are readable; friendship records remain participant-only.
+    match /friendCounts/{userId} {
+      allow get: if request.auth != null;
+      // Existing accounts require a trusted backfill, never a client baseline.
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !exists(/databases/$(database)/documents/users/$(userId))
+        && existsAfter(/databases/$(database)/documents/users/$(userId))
+        && request.resource.data.keys().hasOnly(['count'])
+        && request.resource.data.count == 0;
+
+      function validCountChange() {
+        let pairId = request.resource.data.lastPairId;
+        let pairPath = /databases/$(database)/documents/friendships/$(pairId);
+        let before = get(pairPath).data;
+        return request.resource.data.keys().hasAll(['count', 'lastPairId'])
+          && request.resource.data.keys().hasOnly(['count', 'lastPairId'])
+          && request.resource.data.count is int
+          && request.resource.data.count >= 0
+          && userId in before.memberIds
+          && request.auth.uid in before.memberIds
+          && (
+            (before.status == 'pending'
+              && request.auth.uid == before.recipientId
+              && getAfter(pairPath).data.status == 'accepted'
+              && request.resource.data.count == resource.data.count + 1)
+            || (before.status == 'accepted' && !existsAfter(pairPath)
+              && request.resource.data.count == resource.data.count - 1)
+          );
+      }
+      allow update: if request.auth != null && validCountChange();
     }
     match /friendships/{friendshipId} {
+      function countChanged(uid, delta) {
+        let path = /databases/$(database)/documents/friendCounts/$(uid);
+        return getAfter(path).data.count == get(path).data.count + delta
+          && getAfter(path).data.lastPairId == friendshipId;
+      }
+      function bothCountsChanged(delta) {
+        return countChanged(resource.data.memberIds[0], delta)
+          && countChanged(resource.data.memberIds[1], delta);
+      }
       // Every pair has two distinct UIDs in sorted order.
       // The document ID uses that same order to prevent duplicates.
       function validPair(data) {
@@ -142,7 +255,8 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && validPair(resource.data)
         && resource.data.status == 'accepted'
-        && request.auth.uid in resource.data.memberIds;
+        && request.auth.uid in resource.data.memberIds
+        && bothCountsChanged(-1);
 
       // Participants and usernames cannot be changed after creation.
       // Only the recipient can accept or decline a pending request.
@@ -156,6 +270,7 @@ service cloud.firestore {
             resource.data.status == 'pending'
             && request.auth.uid == resource.data.recipientId
             && request.resource.data.status in ['accepted', 'declined']
+            && (request.resource.data.status == 'declined' || bothCountsChanged(1))
           )
           || (
             resource.data.status == 'declined'

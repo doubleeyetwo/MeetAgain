@@ -23,6 +23,7 @@ import { collections } from '@/data/firestorePaths';
 import { ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { PublicProfile } from '@/types/models';
+import { useFriendCount } from '@/features/friends/useFriendCount';
 
 type Props = NativeStackScreenProps<
   ProfileStackParamList,
@@ -95,6 +96,7 @@ function MemoriesGrid({ memories, emptyMessage }: { memories: Memory[]; emptyMes
 export function OtherProfileScreen({ navigation, route }: Props) {
   const { uid } = route.params;
   const { user } = useAuth();
+  const friendCount = useFriendCount(uid, user?.uid);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -286,10 +288,15 @@ export function OtherProfileScreen({ navigation, route }: Props) {
             {profile.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
 
             <View style={styles.stats}>
-              {/* These totals have no public data source yet, so retain the existing placeholders. */}
+              {/* Posts will be connected when the memories query is implemented. */}
               <Text style={styles.statText}>0 posts</Text>
               <Text style={styles.statDot}>·</Text>
-              <Text style={styles.statText}>0 Friends</Text>
+              <Text style={styles.statText} accessibilityLiveRegion="polite">{friendCount.label}</Text>
+              {friendCount.error ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Retry friend count" onPress={friendCount.retry} hitSlop={8}>
+                  <Ionicons name="refresh" size={16} color={colors.white} />
+                </Pressable>
+              ) : null}
             </View>
 
             {birthday ? <Text style={styles.birthday}>{birthday}</Text> : null}
