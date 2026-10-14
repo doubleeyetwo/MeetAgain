@@ -9,6 +9,8 @@ export type UserProfile = {
   lastName?: string;
   username?: string;
   dateOfBirth?: string;
+  // Written by Edit Profile; absent on accounts created before that screen exists.
+  bio?: string;
   profileComplete?: boolean;
   photoURL?: string;
   photoDataUrl?: string;

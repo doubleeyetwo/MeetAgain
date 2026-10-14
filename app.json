@@ -7,7 +7,11 @@
     "userInterfaceStyle": "automatic",
     "scheme": "meetagain",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fivestack.meetagain",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +23,21 @@
     },
     "plugins": [
       "expo-status-bar",
-      "expo-font"
-    ]
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "043f5cd5-3ba4-4263-8e76-dcc46719fd51"
+      }
+    },
+    "owner": "doubleeye2s-team"
   }
 }

@@ -1,11 +1,23 @@
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { EventTemplatesScreen } from '@/features/events/screens/EventTemplatesScreen';
 import { CreateEventScreen } from '@/features/events/screens/CreateEventScreen';
+import { ReviewEventScreen } from '@/features/events/screens/ReviewEventScreen';
 
 export type EventCreationStackParamList = {
   EventTemplates: undefined;
-  EventDetails: undefined;
+
+  EventDetails: {
+    presetId?: string;
+    category?: string;
+  } | undefined;
+
+  ReviewEvent: {
+    eventName: string;
+    category: string;
+    presetId?: string;
+  };
 };
 
 const Stack =
@@ -27,6 +39,11 @@ export function EventCreationNavigator() {
       <Stack.Screen
         name="EventDetails"
         component={CreateEventScreen}
+      />
+
+      <Stack.Screen
+        name="ReviewEvent"
+        component={ReviewEventScreen}
       />
     </Stack.Navigator>
   );

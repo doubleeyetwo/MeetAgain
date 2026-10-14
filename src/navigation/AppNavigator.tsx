@@ -9,7 +9,7 @@ import { HomeScreen } from '@/features/home/screens/HomeScreen';
 import { MessageFeedScreen } from '@/features/messages/screens/MessageFeedScreen';
 import { EventCreationNavigator } from '@/features/events/navigation/EventCreationNavigator';
 import { CalendarViewScreen } from '@/features/calendar/screens/CalendarViewScreen';
-import { ProfileScreen } from '@/features/profile/screens/ProfileScreen';
+import { ProfileNavigator } from '@/features/profile/navigation/ProfileNavigator';
 
 import { colors } from '@/theme';
 
@@ -150,7 +150,7 @@ function MainTabs() {
 
       <Tabs.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={ProfileNavigator}
       />
     </Tabs.Navigator>
   );

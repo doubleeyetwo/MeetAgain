@@ -30,6 +30,29 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == userId;
+      // Edit Profile may change only these fields; identity, username, and email stay fixed
+      // because the usernames/{username} claim and the auth token are the source of truth.
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['firstName', 'lastName', 'displayName', 'bio', 'photoDataUrl', 'updatedAt'])
+        && request.resource.data.firstName is string
+        && request.resource.data.firstName.size() > 0
+        && request.resource.data.firstName.size() <= 80
+        && request.resource.data.lastName is string
+        && request.resource.data.lastName.size() > 0
+        && request.resource.data.lastName.size() <= 80
+        && request.resource.data.displayName == request.resource.data.firstName + ' ' + request.resource.data.lastName
+        && (!request.resource.data.keys().hasAny(['bio']) || (
+          request.resource.data.bio is string
+          && request.resource.data.bio.size() <= 300
+        ))
+        && (!request.resource.data.keys().hasAny(['photoDataUrl']) || (
+          request.resource.data.photoDataUrl is string
+          && request.resource.data.photoDataUrl.size() <= 200023
+          && request.resource.data.photoDataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+        ))
+        && request.resource.data.updatedAt == request.time;
     }
     match /usernames/{username} {
       // Signed-in users can check availability; listing and changes are denied.

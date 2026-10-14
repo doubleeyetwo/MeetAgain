@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -11,73 +11,37 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { sendPasswordResetEmail } from 'firebase/auth';
 import { Logo } from '@/components/Logo';
-import { auth } from '@/config/firebase';
+import { requestPasswordReset } from '@/features/auth/passwordReset';
 import { AuthStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, sizes, spacing, text } from '@/theme';
 
-type ForgotPasswordRoute = RouteProp<AuthStackParamList, 'ForgotPassword'>;
 type AuthNavigation = NativeStackNavigationProp<AuthStackParamList>;
 
 export function ForgotPasswordScreen() {
   const navigation = useNavigation<AuthNavigation>();
-  const { params } = useRoute<ForgotPasswordRoute>();
   const busyRef = useRef(false);
-  // If the user typed in info on the sign-in screen, it carries over to this screen.
-  const [email, setEmail] = useState(params?.email ?? '');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
 
-  useEffect(() => {
-    navigation.setOptions({ gestureEnabled: !busy });
-  }, [navigation, busy]);
-
-  const onSendReset = async () => {
+  const onSendLink = async () => {
     // Guard rapid taps before the pending state reaches the button.
     if (busyRef.current) return;
-    const normalizedEmail = email.trim();
-    // Reject malformed addresses here so no request reaches Firebase.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setError('Enter a valid email address.');
-      return;
-    }
-
     busyRef.current = true;
     setBusy(true);
     setError('');
-    try {
-      // Firebase emails a link to its hosted page, where the new password is set and the old one stops working.
-      await sendPasswordResetEmail(auth, normalizedEmail);
-      // Replace this screen so Back from the confirmation returns to sign-in instead of the form.
-      navigation.replace('ResetPasswordSent', { email: normalizedEmail });
-    } catch (failure) {
-      const code = failure && typeof failure === 'object' && 'code' in failure ? failure.code : undefined;
-      switch (code) {
-        case 'auth/invalid-email':
-        case 'auth/missing-email':
-          setError('Enter a valid email address.');
-          break;
-        // Only returned when email enumeration protection is turned off in the Firebase console.
-        case 'auth/user-not-found':
-          setError('No account uses that email. Check it for typos or create a new account.');
-          break;
-        case 'auth/too-many-requests':
-          setError('Too many attempts. Please wait a few minutes and try again.');
-          break;
-        case 'auth/network-request-failed':
-          setError('Check your connection and try again.');
-          break;
-        default:
-          setError('Could not send the reset email. Please try again.');
-      }
-    } finally {
-      busyRef.current = false;
-      setBusy(false);
-    }
+
+    const { sent: delivered, error: failure } = await requestPasswordReset(email);
+    if (failure) setError(failure);
+    else if (delivered) setSent(true);
+
+    busyRef.current = false;
+    setBusy(false);
   };
 
   return (
@@ -90,76 +54,69 @@ export function ForgotPasswordScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Back to sign in"
-              onPress={() => navigation.goBack()}
-              disabled={busy}
-              hitSlop={12}
-              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.backChevron}>‹</Text>
-            </Pressable>
-
             <Logo />
 
-            <View style={styles.headings}>
-              <Text style={styles.title}>Reset password</Text>
-              <Text style={styles.subtitle}>Enter your account email and we'll send you a reset link</Text>
+            <View style={styles.copy}>
+              <Text style={styles.prompt}>
+                {sent ? 'Check your email for the reset link' : 'Enter Email To Reset'}
+              </Text>
             </View>
 
-            <TextInput
-              value={email}
-              onChangeText={(value) => {
-                setEmail(value);
-                if (error) setError('');
-              }}
-              placeholder="email@domain.com"
-              placeholderTextColor={colors.white}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              returnKeyType="send"
-              accessibilityLabel="Email address"
-              onSubmitEditing={onSendReset}
-              editable={!busy}
-              style={styles.input}
-            />
+            {sent ? (
+              <Text accessibilityRole="alert" style={styles.confirmation}>
+                We sent a one-time link to {email.trim()}. Open it to choose a new password.
+              </Text>
+            ) : (
+              <View style={styles.form}>
+                <TextInput
+                  value={email}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    if (error) setError('');
+                  }}
+                  placeholder="email@domain.com"
+                  placeholderTextColor={colors.white}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  returnKeyType="go"
+                  accessibilityLabel="Email address"
+                  onSubmitEditing={onSendLink}
+                  editable={!busy}
+                  style={styles.input}
+                />
 
-            {error ? (
-              <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
-            ) : null}
+                {error ? (
+                  <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+                ) : null}
 
-            <Pressable
-<<<<<<< Updated upstream
-              accessibilityRole="button"
-              accessibilityLabel="Send password reset link"
-              onPress={onSendReset}
-=======
-              accessibilityRole="link"
-              onPress={() => navigation.navigate('ResetPassword')}
-              disabled={busy}
-              style={({ pressed }) => [styles.signInLink, pressed && styles.pressed]}
-            >
-              <Text style={styles.signInText}>Already have a reset link?</Text>
-            </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Send a one-time password reset link"
+                  onPress={onSendLink}
+                  disabled={busy}
+                  style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed]}
+                >
+                  <LinearGradient
+                    colors={gradients.purpleAccent}
+                    {...gradientDirection.horizontal}
+                    style={styles.buttonFill}
+                  >
+                    <Text style={styles.buttonText}>{busy ? 'Sending...' : 'Send One-Time Link'}</Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            )}
 
             <Pressable
               accessibilityRole="link"
               onPress={() => navigation.navigate('SignIn')}
->>>>>>> Stashed changes
               disabled={busy}
-              style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.signInLink, pressed && styles.pressed]}
             >
-              <LinearGradient
-                colors={gradients.purpleAccent}
-                {...gradientDirection.horizontal}
-                style={styles.buttonFill}
-              >
-                <Text style={styles.buttonText}>{busy ? 'Sending...' : 'Send Reset Link'}</Text>
-              </LinearGradient>
+              <Text style={styles.signInText}>Sign In</Text>
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -178,30 +135,14 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
     paddingBottom: spacing.xl,
   },
-  backButton: {
-    position: 'absolute',
-    top: spacing.xs,
-    left: spacing.sm,
-    zIndex: 1,
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backChevron: {
-    color: colors.white,
-    fontSize: 38,
-    lineHeight: 40,
-    fontWeight: '300',
-  },
-  headings: {
+  copy: {
     alignItems: 'center',
     marginTop: spacing.xl,
     marginBottom: spacing.lg,
-    gap: spacing.xs,
   },
-  title: { ...text.header, color: colors.white },
-  subtitle: { ...text.body, color: colors.white, textAlign: 'center' },
+  // The frame sets this prompt at 16pt regular, one step above the 14pt body token.
+  prompt: { ...text.body, fontSize: 16, color: colors.white, textAlign: 'center' },
+  form: { gap: spacing.md },
   input: {
     ...text.body,
     height: sizes.controlHeight,
@@ -214,11 +155,9 @@ const styles = StyleSheet.create({
   error: {
     ...text.body,
     color: '#ff9aa8',
-    marginTop: spacing.xs,
     textAlign: 'center',
   },
   buttonShell: {
-    marginTop: spacing.md,
     borderRadius: radius.sm,
     overflow: 'hidden',
   },
@@ -228,5 +167,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: { ...text.body, color: colors.white },
+  confirmation: {
+    ...text.body,
+    color: colors.white,
+    textAlign: 'center',
+  },
+  signInLink: {
+    alignSelf: 'center',
+    marginTop: spacing.lg,
+    padding: spacing.xs,
+  },
+  signInText: {
+    ...text.body,
+    fontSize: 16,
+    color: colors.primaryAccent,
+    textDecorationLine: 'underline',
+  },
   pressed: { opacity: 0.85 },
 });
