@@ -12,9 +12,11 @@ export type AuthStackParamList = {
 };
 export type ProfileStackParamList = {
   ProfileHome: undefined;
+  Friends: undefined;
   EditProfile: undefined;
   Settings: undefined;
   ChangePassword: undefined;
+  OtherProfile: { uid: string }
 };
 
 export type MainTabParamList = {
