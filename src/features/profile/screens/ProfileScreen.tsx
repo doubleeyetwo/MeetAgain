@@ -1,11 +1,15 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { BlurView } from 'expo-blur';
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +25,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { AppStackParamList, ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { UserProfile } from '@/types/models';
+import { findUserByUsername } from '@/features/friends/friendships';
 
 type ProfileNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<ProfileStackParamList>,
@@ -96,6 +101,33 @@ export function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [usernameModalVisible, setUsernameModalVisible] = useState(false);
+  const [usernameQuery, setUsernameQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const searchSequence = useRef(0);
+  const pendingProfileUid = useRef<string | null>(null);
+  const usernameInput = useRef<TextInput>(null);
+
+  // Queue navigation after the render that sets the search modal to hidden.
+  useEffect(() => {
+    if (usernameModalVisible || !pendingProfileUid.current) return;
+    const uid = pendingProfileUid.current;
+    pendingProfileUid.current = null;
+    navigation.navigate('OtherProfile', { uid });
+  }, [usernameModalVisible, navigation]);
+
+  // Every dismissal shares one handler so it hides the native keyboard and clears the draft.
+  const closeUsernameModal = useCallback(() => {
+    // Ignore responses from searches started before this dismissal.
+    ++searchSequence.current;
+    Keyboard.dismiss();
+    setUsernameQuery('');
+    // Clear lookup feedback as well as the text so reopening starts with a fresh overlay.
+    setSearching(false);
+    setSearchError('');
+    setUsernameModalVisible(false);
+  }, []);
 
   // Re-read on focus so edits made on Edit Profile are reflected when the user comes back.
   useFocusEffect(
@@ -124,17 +156,109 @@ export function ProfileScreen() {
 
   const birthday = formatBirthday(profile?.dateOfBirth);
 
+  const searchUsername = async () => {
+    // Ignore repeated submits without invalidating the request already in progress.
+    if (searching) return;
+
+    // Remember which search this response belongs to.
+    const sequence = ++searchSequence.current;
+
+    setSearching(true);
+    setSearchError('');
+
+    try {
+      // Resolve the exact username before choosing the destination UID.
+      const result = await findUserByUsername(usernameQuery);
+      // The overlay closed or another search started while we waited.
+      if (sequence !== searchSequence.current) return;
+
+      // If no user was found, set the inline error and return.
+      if (!result) {
+        setSearchError('Could not find user.');
+        return;
+      }
+
+      // A successful exact match is the selected destination; close the overlay
+      // before navigating so the transparent modal cannot cover the profile.
+      pendingProfileUid.current = result.uid;
+      closeUsernameModal();
+    } catch {
+      // The overlay closed or another search started while we waited.
+      if (sequence !== searchSequence.current) return;
+      // A failed lookup is different from a successful lookup with no match.
+      setSearchError('Search failed. Please try again.');
+    } finally {
+      // This runs even when the try block returns early or throws.
+      // An outdated request must not clear the loading state of a newer request.
+      if (sequence === searchSequence.current) setSearching(false);
+    }
+  };
+
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <StatusBar style="light" />
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
+        <Modal
+          animationType="fade"
+          onRequestClose={closeUsernameModal}
+          // Focus after presentation so the OS opens its real keyboard over this transparent modal.
+          onShow={() => usernameInput.current?.focus()}
+          transparent
+          visible={usernameModalVisible}
+        >
+          <View style={styles.usernameModalRoot}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close username entry"
+              onPress={closeUsernameModal}
+              style={styles.usernameModalBackdrop}
+            />
+            {/* The field sits above the keyboard, so the native keyboard can open without shifting it. */}
+            <View style={styles.usernameInputPosition}>
+              <TextInput
+                ref={usernameInput}
+                editable={!searching}
+                accessibilityLabel="Enter username"
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={(value) => {
+                  // Store the new text so the input reflects what the user typed.
+                  setUsernameQuery(value);
+
+                  // Previous feedback belongs to the old username.
+                  // Clear searchError.
+                  setSearchError('');
+                }}
+                onSubmitEditing={() => {
+                  // Dismiss the keyboard when the user submits.
+                  Keyboard.dismiss();
+
+                  // Start the lookup; searchUsername handles its own errors.
+                  void searchUsername();
+                }}
+                placeholder="Enter Username..."
+                placeholderTextColor={colors.white}
+                returnKeyType="search"
+                style={styles.usernameInput}
+                value={usernameQuery}
+              />
+              {/* Show feedback only when the search has an error message. */}
+              {/* Display the current error below the input; hide it when empty. */}
+              {searchError ? (
+                <Text accessibilityRole="alert" style={{ color: colors.white }}>
+                  {searchError}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+
         <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Add friends"
             hitSlop={12}
-            // Friends is owned by the parent app stack, so this action bubbles out of the profile stack.
-            onPress={() => navigation.navigate('Friends')}
+            onPress={() => setUsernameModalVisible(true)}
             style={({ pressed }) => pressed && styles.pressed}
           >
             <Ionicons name="person-add-outline" size={24} color={colors.white} />
@@ -215,6 +339,15 @@ export function ProfileScreen() {
           )}
         </ScrollView>
       </SafeAreaView>
+      {usernameModalVisible ? (
+        // Keep blur in the profile view hierarchy so it samples the content beneath the transparent modal.
+        <BlurView
+          intensity={5}
+          pointerEvents="none"
+          style={styles.profileBlur}
+          tint="default"
+        />
+      ) : null}
     </LinearGradient>
   );
 }
@@ -223,6 +356,13 @@ export default ProfileScreen;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  profileBlur: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -231,6 +371,32 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   headerRight: { flexDirection: 'row', gap: spacing.md },
+  usernameModalRoot: { flex: 1 },
+  usernameModalBackdrop: {
+    // Dim the profile gently while leaving the username field crisp and easy to read.
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  usernameInputPosition: {
+    position: 'absolute',
+    top: '37%',
+    alignSelf: 'center',
+    width: '75%',
+    maxWidth: 276,
+  },
+  usernameInput: {
+    ...text.body,
+    height: 50,
+    paddingHorizontal: spacing.md,
+    borderRadius: 17,
+    backgroundColor: '#44356f',
+    color: colors.white,
+    textAlign: 'center',
+  },
   content: {
     paddingBottom: spacing.xxl,
     alignItems: 'center',

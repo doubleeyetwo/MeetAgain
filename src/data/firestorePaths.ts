@@ -7,4 +7,5 @@ export const collections = {
   notifications: 'notifications',
   friendships: 'friendships',
   memories: 'memories',
+  publicProfiles: 'publicProfiles',
 } as const;

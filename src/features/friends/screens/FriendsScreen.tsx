@@ -5,6 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '@/features/auth/AuthContext';
 import { findUserByUsername, Friendship, PublicUser, respondToFriendRequest, sendFriendRequest, watchFriendships } from '@/features/friends/friendships';
 import { AppStackParamList } from '@/navigation/types';
+import { ScreenHeader } from '@/components/ScreenHeader';
 
 export function FriendsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -106,10 +107,12 @@ export function FriendsScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <Text style={styles.title}>Friends</Text>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-        <Button title="Back" onPress={() => navigation.goBack()} />
-        <Text style={styles.body}>Search by exact username to find a person.</Text>
+        <ScreenHeader
+                title="Friends List"
+                onBack={() => navigation.goBack()}
+              />
+        {/* <Text style={styles.header}>Search by exact username to find a person.</Text> */}
         <TextInput
           value={searchText}
           editable={!busy}
@@ -119,7 +122,7 @@ export function FriendsScreen() {
             setSearchResult(null);
             setSearched(false);
           }}
-          placeholder="Username"
+          placeholder="Type username"
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"

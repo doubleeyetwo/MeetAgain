@@ -106,6 +106,21 @@ export async function respondToFriendRequest(
   });
 }
 
+export async function removeFriendship(friendship: Friendship, actingUid: string): Promise<void> {
+  const relationshipRef = doc(db, 'friendships', friendship.id);
+  await runTransaction(db, async (transaction) => {
+    // Read the current relationship so a stale profile cannot delete a new pending
+    // request. Firestore rules independently enforce accepted status and membership.
+    const snapshot = await transaction.get(relationshipRef);
+    if (!snapshot.exists()) throw new Error('This friendship no longer exists.');
+    const current = snapshot.data();
+    if (current.status !== 'accepted' || !Array.isArray(current.memberIds) || !current.memberIds.includes(actingUid)) {
+      throw new Error('Only a friend can remove an accepted friendship.');
+    }
+    transaction.delete(relationshipRef);
+  });
+}
+
 export function watchFriendships(
   uid: string,
   onChange: (friendships: Friendship[]) => void,
