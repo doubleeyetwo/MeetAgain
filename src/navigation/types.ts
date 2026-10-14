@@ -6,8 +6,9 @@ export type AuthStackParamList = {
   Register: undefined;
   Password: { email: string };
   CreateProfile: undefined;
-  ForgotPassword: { email?: string } | undefined;
-  ResetPasswordSent: { email: string };
+  ForgotPassword: undefined;
+  // The pasted reset code stays inside the screen; a live reset code is as sensitive as a password.
+  ResetPassword: undefined;
 };
 export type ProfileStackParamList = {
   ProfileHome: undefined;
