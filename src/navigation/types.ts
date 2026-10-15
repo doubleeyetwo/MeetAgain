@@ -7,12 +7,16 @@ export type AuthStackParamList = {
   Password: { email: string };
   CreateProfile: undefined;
   ForgotPassword: undefined;
+  // The pasted reset code stays inside the screen; a live reset code is as sensitive as a password.
+  ResetPassword: undefined;
 };
 export type ProfileStackParamList = {
   ProfileHome: undefined;
+  Friends: undefined;
   EditProfile: undefined;
   Settings: undefined;
   ChangePassword: undefined;
+  OtherProfile: { uid: string }
 };
 
 export type MainTabParamList = {

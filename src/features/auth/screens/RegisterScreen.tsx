@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Linking,
@@ -18,6 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, gradients, gradientDirection, spacing, radius, sizes, text } from '@/theme';
 import { Logo, GoogleIcon } from '@/components/Logo';
 import { AuthStackParamList } from '@/navigation/types';
+import { useAuth } from '@/features/auth/AuthContext';
+import { useGoogleSignIn } from '@/features/auth/googleAuth';
 
 const TERMS_URL = 'https://example.com/terms'; // TODO: replace
 const PRIVACY_URL = 'https://example.com/privacy'; // TODO: replace
@@ -26,6 +28,13 @@ export function RegisterScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  const { profilePending } = useAuth();
+
+  useEffect(() => {
+    // The auth stack is already mounted when Google returns. Move a new
+    // account into setup once the profile gate identifies its missing profile.
+    if (profilePending) navigation.navigate('CreateProfile');
+  }, [navigation, profilePending]);
 
   const onContinue = () => {
     // Trim before passing the email between screens so signup uses the same normalized value.
@@ -38,7 +47,7 @@ export function RegisterScreen() {
     setEmailError('');
     navigation.navigate('Password', { email: normalizedEmail });
   };
-  const onGoogle = () => console.log('google'); // TODO
+  const google = useGoogleSignIn();
   const onSignIn = () => navigation.navigate('SignIn');
 
   return (
@@ -104,12 +113,20 @@ export function RegisterScreen() {
             </View>
 
             <Pressable
-              onPress={onGoogle}
-              style={({ pressed }) => [styles.googleButton, pressed && styles.pressed]}
+              onPress={google.signIn}
+              disabled={!google.available || google.pending}
+              style={({ pressed }) => [
+                styles.googleButton,
+                pressed && styles.pressed,
+                (!google.available || google.pending) && styles.disabled,
+              ]}
             >
               <GoogleIcon />
-              <Text style={styles.buttonText}>Continue with Google</Text>
+              <Text style={styles.buttonText}>
+                {google.pending ? 'Opening Google...' : 'Continue with Google'}
+              </Text>
             </Pressable>
+            {google.error ? <Text style={styles.error}>{google.error}</Text> : null}
 
             <Text style={styles.legal}>
               By clicking continue, you agree to our{' '}
@@ -183,6 +200,7 @@ const styles = StyleSheet.create({
   },
   buttonText: { ...text.body, color: colors.white },
   pressed: { opacity: 0.85 },
+  disabled: { opacity: 0.5 },
 
   dividerRow: {
     flexDirection: 'row',

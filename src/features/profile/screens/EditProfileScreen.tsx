@@ -18,11 +18,16 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth, ProfilePhoto } from '@/features/auth/AuthContext';
-import { pickPhotoFromLibrary, takeProfilePhoto } from '@/features/auth/profilePhoto';
+import {
+  pickPhotoFromLibrary,
+  PROFILE_PHOTO_JPEG_PREFIX,
+  PROFILE_PHOTO_MAX_DATA_URL_LENGTH,
+  takeProfilePhoto,
+} from '@/features/auth/profilePhoto';
 import { ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, sizes, spacing, text } from '@/theme';
 import { UserProfile } from '@/types/models';
@@ -116,22 +121,74 @@ export function EditProfileScreen() {
       setError('Keep each name under 80 characters.');
       return;
     }
+    const trimmedBio = bio.trim();
+    if (trimmedBio.length > BIO_MAX_LENGTH) {
+      setError('Keep your bio under 300 characters.');
+      return;
+    }
+    if (photo && (!photo.dataUrl.startsWith(PROFILE_PHOTO_JPEG_PREFIX) ||
+      photo.dataUrl.length > PROFILE_PHOTO_MAX_DATA_URL_LENGTH)) {
+      setError('Choose a smaller profile photo and try again.');
+      return;
+    }
 
     busyRef.current = true;
     setSaving(true);
     setError('');
     try {
-      await updateDoc(doc(db, collections.users, user.uid), {
-        firstName: trimmedFirst,
-        lastName: trimmedLast,
-        displayName: `${trimmedFirst} ${trimmedLast}`,
-        bio: bio.trim(),
-        ...(photo ? { photoDataUrl: photo.dataUrl } : {}),
-        updatedAt: serverTimestamp(),
+      // Keep private details, the public profile, and username display name in sync.
+      // Older accounts may need a public document built from known safe fields.
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, collections.users, user.uid);
+        const publicRef = doc(db, collections.publicProfiles, user.uid);
+        const savedUser = await transaction.get(userRef);
+        const savedPublic = await transaction.get(publicRef);
+        if (!savedUser.exists()) throw new Error('Your profile is unavailable. Sign in again.');
+        const profile = savedUser.data() as UserProfile;
+        if (!profile.username) throw new Error('Your username is missing. Please contact support.');
+        const usernameRef = doc(db, collections.usernames, profile.username);
+        const claim = await transaction.get(usernameRef);
+        if (claim.exists() && claim.data().uid !== user.uid) {
+          throw new Error('Your username belongs to another account. Please contact support.');
+        }
+
+        const displayName = `${trimmedFirst} ${trimmedLast}`;
+        const updatedAt = serverTimestamp();
+        const photoDataUrl = photo?.dataUrl ?? profile.photoDataUrl;
+        transaction.update(userRef, {
+          firstName: trimmedFirst, lastName: trimmedLast, displayName,
+          bio: trimmedBio,
+          ...(photo ? { photoDataUrl: photo.dataUrl } : {}),
+          updatedAt,
+        });
+        const publicDetails = {
+          displayName,
+          bio: trimmedBio,
+          ...(photoDataUrl ? { photoDataUrl } : {}),
+          updatedAt,
+        };
+        if (savedPublic.exists()) {
+          transaction.update(publicRef, publicDetails);
+        } else {
+          transaction.set(publicRef, {
+            id: user.uid,
+            username: profile.username,
+            ...(profile.dateOfBirth ? { dateOfBirth: profile.dateOfBirth } : {}),
+            ...(profile.photoURL ? { photoURL: profile.photoURL } : {}),
+            createdAt: profile.createdAt,
+            ...publicDetails,
+          });
+        }
+        if (claim.exists()) transaction.update(usernameRef, { displayName });
+        else transaction.set(usernameRef, { uid: user.uid, displayName });
       });
       navigation.goBack();
-    } catch {
-      setError('Could not save your profile. Please try again.');
+    } catch (error) {
+      setError(error instanceof Error && !('code' in error)
+        ? error.message
+        : error && typeof error === 'object' && 'code' in error && error.code === 'permission-denied'
+          ? 'Profile changes are blocked by Firebase permissions. Try again after the rules are updated.'
+          : 'Could not save your profile. Check your connection and try again.');
     } finally {
       busyRef.current = false;
       setSaving(false);

@@ -24,6 +24,14 @@ SignInScreen calls Firebase's email/password sign-in method. AuthContext listens
 
 Older accounts with an existing profile document remain usable even if that document predates the `profileComplete` field.
 
+## Password reset
+
+**ForgotPasswordScreen** calls `requestPasswordReset` in `passwordReset.ts`, which validates the email and asks Firebase to send a reset link. Sending a link can fail only for request-level reasons (bad email, network, rate limit). It never reports an expired or used link.
+
+Tapping the emailed link opens a page hosted by Firebase, not by the app. If that page says the link "has expired or has already been used", the app never sees why. Each link works once and expires after one hour. Opening an older email in the same thread is the usual cause: Gmail groups reset emails into one thread and can hide the newest link behind "show trimmed content".
+
+**ResetPasswordScreen** ("Already have a reset link?") finishes the reset inside the app instead. The user pastes the link; `checkResetLink` extracts its one-time code and calls `verifyPasswordResetCode`, which checks the code without using it up. `completePasswordReset` then calls `confirmPasswordReset` with the new password. Both map `auth/expired-action-code` and `auth/invalid-action-code` to separate messages, and a link that expires between the two steps sends the user back to paste a fresh one. The code stays in screen state only, because anyone holding a live code can set the account's password.
+
 ## Why signup needs a transaction and retry handling
 
 Two people could choose the same username at the same time. A Firestore transaction checks `usernames/{username}` and writes both the reservation and `users/{uid}` together. The rules also require those documents to match. This makes username ownership a database decision instead of a check performed only by the form.
@@ -44,4 +52,4 @@ Keep a feature's screens and business logic in its own `src/features` folder. Sc
 
 Firestore rules are part of a feature too: a new screen does not automatically gain permission to read or write a new collection. The current rules allow the signup operations and deny unspecified access. Changes to rules must be published separately in Firebase.
 
-For a manual check, create a profile, sign out, sign in with the correct credentials, then try an incorrect password. Also try a duplicate username and retry with a different one. Verify photos and camera permissions on the iPhone. Type checking alone does not exercise those flows.
+For a manual check, create a profile, sign out, sign in with the correct credentials, then try an incorrect password. Also try a duplicate username and retry with a different one. For password reset, submit a malformed email (an error appears and nothing is sent), then request a reset for your account, set a new password from the email link, and confirm only the new password signs in. Verify photos and camera permissions on the iPhone. Type checking alone does not exercise those flows.

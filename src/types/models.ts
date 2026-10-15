@@ -54,3 +54,18 @@ export type AppNotification = {
   readAt?: Timestamp;
   createdAt: Timestamp;
 };
+
+// Explicit fields visible to other signed-in users.
+// Keep personal account information such as email out of this model.
+export type PublicProfile = {
+  // This UID must match the publicProfiles document ID.
+  id: string;
+  displayName: string;
+  username: string;
+  dateOfBirth?: string;
+  bio?: string;
+  photoURL?: string;
+  photoDataUrl?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
