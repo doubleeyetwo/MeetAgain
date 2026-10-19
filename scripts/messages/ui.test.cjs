@@ -48,6 +48,21 @@ function loadAddMembers({ friends, createGroup }) {
     ActivityIndicator: component('ActivityIndicator'), FlatList: component('FlatList'), Image: component('Image'), Pressable: component('Pressable'), StyleSheet: { create: (value) => value, hairlineWidth: 1 },
     Text: component('Text'), TextInput: component('TextInput'), View: component('View'),
   };
+  const displaySource = fs.readFileSync(path.join(__dirname, '../../src/features/messages/FriendDisplay.tsx'), 'utf8');
+  const displayCompiled = ts.transpileModule(displaySource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+  }).outputText;
+  const displayModule = { exports: {} };
+  vm.runInNewContext(displayCompiled, {
+    module: displayModule,
+    exports: displayModule.exports,
+    require(id) {
+      if (id === 'react/jsx-runtime') return require(id);
+      if (id === 'react-native') return native;
+      if (id === '@/theme') return { colors: { white: '#fff', cardLighter: '#321' } };
+      throw new Error(`Unexpected FriendDisplay import: ${id}`);
+    },
+  }, { filename: 'FriendDisplay.tsx' });
   const module = { exports: {} };
   vm.runInNewContext(compiled, {
     module,
@@ -63,6 +78,7 @@ function loadAddMembers({ friends, createGroup }) {
       if (id === '@/features/auth/AuthContext') return { useAuth: () => ({ user: { uid: 'alice' } }) };
       if (id === '@/features/messages/useAcceptedMessageFriends') return { useAcceptedMessageFriends: () => ({ friends: currentFriends, loading: false, error: false, retry() {} }) };
       if (id === '@/features/messages/groups') return { createGroup, MAX_GROUP_MEMBERS: 10 };
+      if (id === '@/features/messages/FriendDisplay') return displayModule.exports;
       if (id === '@/theme') return {
         colors: { white: '#fff', cardLighter: '#321', cardDarker: '#210', primaryAccent: '#70f', linkAccent: '#99f' },
         gradientDirection: { vertical: {} }, gradients: { background: ['#111', '#000'] }, spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },

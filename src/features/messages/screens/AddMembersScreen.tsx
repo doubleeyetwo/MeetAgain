@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,23 +10,10 @@ import { MessagesStackParamList } from '@/navigation/types';
 import { useAcceptedMessageFriends } from '@/features/messages/useAcceptedMessageFriends';
 import { useAuth } from '@/features/auth/AuthContext';
 import { createGroup, MAX_GROUP_MEMBERS } from '@/features/messages/groups';
-import { MessageFriend } from '@/features/messages/useAcceptedMessageFriends';
+import { FriendAvatar, friendDisplayName, friendSearchText } from '@/features/messages/FriendDisplay';
 
 type Navigation = NativeStackNavigationProp<MessagesStackParamList, 'AddMembers'>;
 const MAX_SELECTED = MAX_GROUP_MEMBERS - 1;
-
-function personName(friend: MessageFriend) {
-  return friend.profile?.displayName || friend.username;
-}
-
-function Avatar({ friend, size = 52 }: { friend: MessageFriend; size?: number }) {
-  const uri = friend.profile?.photoDataUrl || friend.profile?.photoURL;
-  return uri ? <Image source={{ uri }} style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} /> : (
-    <View style={[styles.avatar, styles.avatarFallback, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={styles.avatarInitial}>{personName(friend).trim().charAt(0).toLocaleUpperCase() || '?'}</Text>
-    </View>
-  );
-}
 
 export function AddMembersScreen() {
   const navigation = useNavigation<Navigation>();
@@ -58,7 +45,7 @@ export function AddMembersScreen() {
   }, [friends, loading]);
   const filteredFriends = useMemo(() => {
     const term = query.trim().toLocaleLowerCase();
-    return term ? friends.filter((friend) => `${personName(friend)} ${friend.profile?.username || friend.username}`.toLocaleLowerCase().includes(term)) : friends;
+    return term ? friends.filter((friend) => friendSearchText(friend).toLocaleLowerCase().includes(term)) : friends;
   }, [friends, query]);
 
   const toggle = (uid: string) => {
@@ -93,6 +80,9 @@ export function AddMembersScreen() {
     }
   };
 
+  const confirmDisabled = selected.length === 0 || saving || loading || friendsError;
+  const confirmLooksDisabled = selected.length === 0 || saving;
+
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
@@ -105,12 +95,26 @@ export function AddMembersScreen() {
         </View>
         <View style={styles.searchField}>
           <Ionicons name="search" size={18} color={colors.white} />
-          <TextInput accessibilityLabel="Search accepted friends" autoCapitalize="none" autoCorrect={false} onChangeText={setQuery}
-            placeholder="Search..." placeholderTextColor="rgba(244, 241, 247, 0.62)" returnKeyType="search" style={styles.searchInput} value={query} />
+          <TextInput
+            accessibilityLabel="Search accepted friends"
+            autoCapitalize="none"
+            autoCorrect={false}
+            onChangeText={setQuery}
+            placeholder="Search..."
+            placeholderTextColor="rgba(244, 241, 247, 0.62)"
+            returnKeyType="search"
+            style={styles.searchInput}
+            value={query}
+          />
         </View>
         <Text style={styles.selectionCount}>{selected.length} selected · up to {MAX_SELECTED} friends</Text>
 
-        {loading ? <View style={styles.state}><ActivityIndicator color={colors.white} /><Text style={styles.stateText}>Loading friends...</Text></View> : friendsError ? (
+        {loading ? (
+          <View style={styles.state}>
+            <ActivityIndicator color={colors.white} />
+            <Text style={styles.stateText}>Loading friends...</Text>
+          </View>
+        ) : friendsError ? (
           <View style={styles.state}>
             <Text accessibilityRole="alert" style={styles.stateText}>Could not load friends. Try again.</Text>
             <Pressable accessibilityRole="button" onPress={retry} style={styles.retryButton}><Text style={styles.retryText}>Retry</Text></Pressable>
@@ -125,27 +129,54 @@ export function AddMembersScreen() {
               const checked = selected.includes(item.uid);
               const capped = !checked && selected.length >= MAX_SELECTED;
               return (
-                <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled: capped }} accessibilityLabel={`${personName(item)}, ${checked ? 'selected' : 'not selected'}`}
-                  disabled={capped || saving} onPress={() => toggle(item.uid)} style={({ pressed }) => [styles.friendRow, pressed && styles.pressed, capped && styles.disabledRow]}>
-                  <Avatar friend={item} />
-                  <View style={styles.friendInfo}><Text numberOfLines={1} style={styles.friendName}>{personName(item)}</Text><Text numberOfLines={1} style={styles.username}>@{item.profile?.username || item.username}</Text></View>
-                  <View style={[styles.checkbox, checked && styles.checkboxSelected]}>{checked ? <Ionicons name="checkmark" size={17} color={colors.white} /> : null}</View>
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked, disabled: capped }}
+                  accessibilityLabel={`${friendDisplayName(item)}, ${checked ? 'selected' : 'not selected'}`}
+                  disabled={capped || saving}
+                  onPress={() => toggle(item.uid)}
+                  style={({ pressed }) => [styles.friendRow, pressed && styles.pressed, capped && styles.disabledRow]}
+                >
+                  <FriendAvatar friend={item} size={52} />
+                  <View style={styles.friendInfo}>
+                    <Text numberOfLines={1} style={styles.friendName}>{friendDisplayName(item)}</Text>
+                    <Text numberOfLines={1} style={styles.username}>@{item.profile?.username || item.username}</Text>
+                  </View>
+                  <View style={[styles.checkbox, checked && styles.checkboxSelected]}>
+                    {checked ? <Ionicons name="checkmark" size={17} color={colors.white} /> : null}
+                  </View>
                 </Pressable>
               );
             }}
-            ListEmptyComponent={<Text style={styles.stateText}>{query.trim() ? 'No friends match your search.' : friends.length ? 'No accepted friends found.' : 'Your accepted friends will appear here.'}</Text>}
+            ListEmptyComponent={<EmptyFriendsMessage query={query} friendCount={friends.length} />}
             showsVerticalScrollIndicator={false}
           />
         )}
 
         {saveError ? <Text accessibilityRole="alert" style={styles.errorText}>{saveError}</Text> : null}
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !selected.length || saving || loading || friendsError, busy: saving }} disabled={!selected.length || saving || loading || friendsError}
-          onPress={() => void confirm()} style={({ pressed }) => [styles.confirmButton, (!selected.length || saving) && styles.confirmDisabled, pressed && styles.pressed]}>
-          {saving ? <ActivityIndicator color={colors.white} /> : <Text style={styles.confirmText}>Confirm Members</Text>}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: confirmDisabled, busy: saving }}
+          disabled={confirmDisabled}
+          onPress={() => void confirm()}
+          style={({ pressed }) => [styles.confirmButton, confirmLooksDisabled && styles.confirmDisabled, pressed && styles.pressed]}
+        >
+          {saving ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Text style={styles.confirmText}>Confirm Members</Text>
+          )}
         </Pressable>
       </SafeAreaView>
     </LinearGradient>
   );
+}
+
+function EmptyFriendsMessage({ query, friendCount }: { query: string; friendCount: number }) {
+  let message = 'Your accepted friends will appear here.';
+  if (query.trim()) message = 'No friends match your search.';
+  else if (friendCount > 0) message = 'No accepted friends found.';
+  return <Text style={styles.stateText}>{message}</Text>;
 }
 
 const styles = StyleSheet.create({
@@ -159,9 +190,6 @@ const styles = StyleSheet.create({
   list: { paddingTop: spacing.sm, paddingBottom: spacing.md },
   emptyList: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
   friendRow: { minHeight: 76, marginHorizontal: spacing.md, paddingHorizontal: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  avatar: { backgroundColor: colors.cardLighter },
-  avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { color: colors.white, fontFamily: 'Moderustic_600SemiBold', fontSize: 20 },
   friendInfo: { flex: 1 },
   friendName: { color: colors.white, fontFamily: 'Moderustic_600SemiBold', fontSize: 17 },
   username: { color: 'rgba(244,241,247,0.68)', marginTop: 2, fontSize: 13 },

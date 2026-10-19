@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,11 +10,10 @@ import { MessagesStackParamList } from '@/navigation/types';
 import { useAcceptedMessageFriends, MessageFriend } from '@/features/messages/useAcceptedMessageFriends';
 import { useAuth } from '@/features/auth/AuthContext';
 import { Group, watchGroups } from '@/features/messages/groups';
+import { FriendAvatar, friendDisplayName, friendSearchText } from '@/features/messages/FriendDisplay';
 
 type Navigation = NativeStackNavigationProp<MessagesStackParamList, 'MessageList'>;
 type Entry = { type: 'group'; value: Group } | { type: 'friend'; value: MessageFriend };
-
-function nameOf(friend: MessageFriend) { return friend.profile?.displayName || friend.username; }
 
 export function MessageFeedScreen() {
   const navigation = useNavigation<Navigation>();
@@ -54,18 +53,25 @@ export function MessageFeedScreen() {
     if (!user || friendsUid !== user.uid) return [];
     const term = query.trim().toLocaleLowerCase();
     const matchingGroups = groups.filter((group) => !term || group.name.toLocaleLowerCase().includes(term));
-    const matchingFriends = friends.filter((friend) => !term || `${nameOf(friend)} ${friend.profile?.username || friend.username}`.toLocaleLowerCase().includes(term));
+    const matchingFriends = friends.filter((friend) => !term || friendSearchText(friend).toLocaleLowerCase().includes(term));
     return [...matchingGroups.map((value) => ({ type: 'group' as const, value })), ...matchingFriends.map((value) => ({ type: 'friend' as const, value }))];
   }, [friends, friendsUid, groups, query, user]);
 
-  const opening = (entry: Entry) => {
+  const openEntry = (entry: Entry) => {
     if (entry.type === 'group') {
       navigation.navigate('Conversation', { kind: 'group', title: entry.value.name, memberIds: entry.value.memberIds, groupId: entry.value.id });
     } else {
-      navigation.navigate('Conversation', { kind: 'friend', title: nameOf(entry.value), memberIds: [user!.uid, entry.value.uid] });
+      navigation.navigate('Conversation', { kind: 'friend', title: friendDisplayName(entry.value), memberIds: [user!.uid, entry.value.uid] });
     }
   };
   const loading = groupsLoading || friendsLoading || (!!user && friendsUid !== user.uid);
+  let errorMessage = 'Could not load friends.';
+  if (groupsError && friendsError) errorMessage = 'Could not load groups or friends.';
+  else if (groupsError) errorMessage = 'Could not load groups.';
+  const retryFailedLoads = () => {
+    if (groupsError) setGroupsRetry((value) => value + 1);
+    if (friendsError) retryFriends();
+  };
 
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
@@ -83,8 +89,10 @@ export function MessageFeedScreen() {
 
         {groupsError || friendsError ? (
           <View style={styles.errorBanner}>
-            <Text accessibilityRole="alert" style={styles.errorText}>Could not load {groupsError && friendsError ? 'groups or friends' : groupsError ? 'groups' : 'friends'}.</Text>
-            <Pressable accessibilityRole="button" onPress={() => { if (groupsError) setGroupsRetry((value) => value + 1); if (friendsError) retryFriends(); }} style={styles.retryButton}><Text style={styles.retryText}>Retry</Text></Pressable>
+            <Text accessibilityRole="alert" style={styles.errorText}>{errorMessage}</Text>
+            <Pressable accessibilityRole="button" onPress={retryFailedLoads} style={styles.retryButton}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
           </View>
         ) : null}
         {loading ? (
@@ -96,16 +104,9 @@ export function MessageFeedScreen() {
             contentContainerStyle={entries.length ? styles.list : styles.emptyList}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
-              <Pressable accessibilityRole="button" accessibilityLabel={item.type === 'group' ? `Open ${item.value.name}` : `Open conversation with ${nameOf(item.value)}`}
-                onPress={() => opening(item)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-                {item.type === 'group' ? (
-                  <View style={[styles.avatar, styles.groupAvatar]}><Ionicons name="people" size={23} color={colors.white} /></View>
-                ) : <FriendAvatar friend={item.value} />}
-                <Text numberOfLines={1} style={styles.name}>{item.type === 'group' ? item.value.name : nameOf(item.value)}</Text>
-                <Ionicons name="chevron-forward" size={20} color={colors.white} />
-              </Pressable>
+              <MessageEntryRow entry={item} onOpen={openEntry} />
             )}
-            ListEmptyComponent={<Text style={styles.stateText}>{groupsError || friendsError ? 'Some messages could not be loaded. Try again.' : query.trim() ? 'No messages or friends match your search.' : 'Your friends and groups will appear here.'}</Text>}
+            ListEmptyComponent={<MessageFeedEmptyMessage hasError={groupsError || friendsError} query={query} />}
             showsVerticalScrollIndicator={false}
           />
         )}
@@ -114,10 +115,35 @@ export function MessageFeedScreen() {
   );
 }
 
-function FriendAvatar({ friend }: { friend: MessageFriend }) {
-  const uri = friend.profile?.photoDataUrl || friend.profile?.photoURL;
-  return uri ? <Image source={{ uri }} style={styles.avatar} /> : (
-    <View style={[styles.avatar, styles.friendAvatar]}><Text style={styles.avatarInitial}>{nameOf(friend).trim().charAt(0).toLocaleUpperCase() || '?'}</Text></View>
+function MessageFeedEmptyMessage({ hasError, query }: { hasError: boolean; query: string }) {
+  let message = 'Your friends and groups will appear here.';
+  if (hasError) message = 'Some messages could not be loaded. Try again.';
+  else if (query.trim()) message = 'No messages or friends match your search.';
+  return <Text style={styles.stateText}>{message}</Text>;
+}
+
+function MessageEntryRow({ entry, onOpen }: { entry: Entry; onOpen: (entry: Entry) => void }) {
+  const isGroup = entry.type === 'group';
+  const title = isGroup ? entry.value.name : friendDisplayName(entry.value);
+  const accessibilityLabel = isGroup ? `Open ${title}` : `Open conversation with ${title}`;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={() => onOpen(entry)}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+    >
+      {isGroup ? (
+        <View style={[styles.avatar, styles.groupAvatar]}>
+          <Ionicons name="people" size={23} color={colors.white} />
+        </View>
+      ) : (
+        <FriendAvatar friend={entry.value} />
+      )}
+      <Text numberOfLines={1} style={styles.name}>{title}</Text>
+      <Ionicons name="chevron-forward" size={20} color={colors.white} />
+    </Pressable>
   );
 }
 
@@ -131,9 +157,7 @@ const styles = StyleSheet.create({
   emptyList: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
   row: { minHeight: 79, marginHorizontal: spacing.md, paddingHorizontal: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: colors.cardLighter },
-  friendAvatar: { alignItems: 'center', justifyContent: 'center' },
   groupAvatar: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primaryAccent },
-  avatarInitial: { color: colors.white, fontFamily: 'Moderustic_600SemiBold', fontSize: 20 },
   name: { ...text.header, flex: 1, color: colors.white },
   state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   stateText: { ...text.body, color: colors.white, textAlign: 'center', lineHeight: 21 },

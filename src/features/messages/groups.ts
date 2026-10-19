@@ -7,6 +7,8 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
+  type DocumentReference,
+  type Transaction,
   where,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
@@ -35,6 +37,40 @@ export function groupMemberKey(memberIds: string[]): string {
   return sorted.join('_');
 }
 
+async function findExistingGroup(
+  transaction: Transaction,
+  membershipRef: DocumentReference,
+  key: string,
+): Promise<string | null> {
+  const membership = await transaction.get(membershipRef);
+  if (!membership.exists()) return null;
+  const existingId = membership.data().groupId;
+  if (typeof existingId !== 'string' || !/^[A-Za-z0-9]{20}$/.test(existingId)) {
+    throw new Error('The existing group could not be opened.');
+  }
+  const existingGroup = await transaction.get(doc(db, 'groups', existingId));
+  if (!existingGroup.exists() || existingGroup.data().memberIds?.join('_') !== key) {
+    throw new Error('The existing group could not be opened.');
+  }
+  return existingGroup.id;
+}
+
+async function requireAcceptedFriends(
+  transaction: Transaction,
+  creatorUid: string,
+  friendUids: string[],
+): Promise<void> {
+  const friendRefs = friendUids.map((uid) => doc(db, 'friendships', friendshipId(creatorUid, uid)));
+  const friendships = await Promise.all(friendRefs.map((ref) => transaction.get(ref)));
+  const allAccepted = friendships.every((friendship, index) => friendship.exists()
+    && friendship.data().status === 'accepted'
+    && Array.isArray(friendship.data().memberIds)
+    && friendship.data().memberIds.join('_') === friendshipId(creatorUid, friendUids[index]));
+  if (!allAccepted) {
+    throw new Error('Every group member must be an accepted friend. Refresh your friends and try again.');
+  }
+}
+
 export async function createGroup(creatorUid: string, friendUids: string[]): Promise<Group> {
   const memberIds = [creatorUid, ...friendUids].sort();
   const key = groupMemberKey(memberIds);
@@ -44,31 +80,16 @@ export async function createGroup(creatorUid: string, friendUids: string[]): Pro
   const newGroupRef = doc(collection(db, 'groups'));
 
   const groupId = await runTransaction(db, async (transaction) => {
-    const membership = await transaction.get(membershipRef);
-    if (membership.exists()) {
-      const existingId = membership.data().groupId;
-      if (typeof existingId !== 'string' || !/^[A-Za-z0-9]{20}$/.test(existingId)) {
-        throw new Error('The existing group could not be opened.');
-      }
-      const existing = await transaction.get(doc(db, 'groups', existingId));
-      if (!existing.exists() || existing.data().memberIds?.join('_') !== key) {
-        throw new Error('The existing group could not be opened.');
-      }
-      return existing.id;
+    const existingId = await findExistingGroup(transaction, membershipRef, key);
+    if (existingId) {
+      return existingId;
     }
 
     const counter = await transaction.get(counterRef);
     const number = counter.exists() ? counter.data().latestNumber + 1 : 1;
     if (!Number.isSafeInteger(number) || number < 1) throw new Error('The next group name is unavailable.');
 
-    const friendRefs = friendUids.map((uid) => doc(db, 'friendships', friendshipId(creatorUid, uid)));
-    const friendships = await Promise.all(friendRefs.map((ref) => transaction.get(ref)));
-    if (friendships.some((friend, index) => !friend.exists()
-      || friend.data().status !== 'accepted'
-      || !Array.isArray(friend.data().memberIds)
-      || friend.data().memberIds.join('_') !== friendshipId(creatorUid, friendUids[index]))) {
-      throw new Error('Every group member must be an accepted friend. Refresh your friends and try again.');
-    }
+    await requireAcceptedFriends(transaction, creatorUid, friendUids);
 
     const name = `Group${number}`;
     const timestamp = serverTimestamp();
