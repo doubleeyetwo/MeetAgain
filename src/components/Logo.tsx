@@ -1,28 +1,29 @@
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { colors, text } from '@/theme';
 
-/* Logo: SVG approximation. Replace with your real exported asset. */
+// Flat-color mark: two people meeting at the center of the M.
 export function Logo() {
   return (
     <View style={styles.logoWrap}>
-      <Svg width={44} height={44} viewBox="0 0 44 44">
-        <Defs>
-          <SvgGradient id="logoBlue" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#7FA2FF" />
-            <Stop offset="1" stopColor="#8B7BFF" />
-          </SvgGradient>
-          <SvgGradient id="logoPurple" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor="#9A5BFF" />
-            <Stop offset="1" stopColor="#7A1FE0" />
-          </SvgGradient>
-        </Defs>
-        <Circle cx={8} cy={6} r={6} fill="url(#logoBlue)" />
-        <Circle cx={36} cy={6} r={6} fill="url(#logoPurple)" />
-        <Rect x={2} y={16} width={12} height={26} rx={6} fill="url(#logoBlue)" />
+      <Svg width={44} height={44} viewBox="0 0 144 160">
+        <Circle cx={18} cy={18} r={18} fill="#8CABFF" />
+        <Circle cx={126} cy={18} r={18} fill="#7B3FF2" />
         <Path
-          d="M16 18 L22 32 L28 18 L28 36 C28 39.3 30.7 42 34 42 C37.3 42 40 39.3 40 36 L40 18 C40 15 38 14 36 14 C34 14 32.5 15 31.5 17 L22 34 Z"
-          fill="url(#logoPurple)"
+          d="M16 144 V70 L72 122"
+          fill="none"
+          stroke="#8CABFF"
+          strokeWidth={32}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Path
+          d="M72 122 L128 70 V144"
+          fill="none"
+          stroke="#7B3FF2"
+          strokeWidth={32}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </Svg>
       <Text style={styles.brand}>MeetAgain</Text>
