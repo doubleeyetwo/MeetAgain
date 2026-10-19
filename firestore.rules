@@ -69,6 +69,9 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data.displayName == request.resource.data.displayName
             && getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data.get('bio', '') == request.resource.data.bio
             && getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data.get('photoDataUrl', '') == request.resource.data.get('photoDataUrl', '')));
+      allow delete: if request.auth != null && request.auth.uid == userId
+        && !existsAfter(/databases/$(database)/documents/publicProfiles/$(userId))
+        && !existsAfter(/databases/$(database)/documents/friendCounts/$(userId));
     }
     match /publicProfiles/{userId} {
       allow get: if request.auth != null;
@@ -115,6 +118,8 @@ service cloud.firestore {
       allow update: if validPublicProfile()
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['displayName', 'bio', 'photoDataUrl', 'updatedAt']);
+      allow delete: if request.auth != null && request.auth.uid == userId
+        && !existsAfter(/databases/$(database)/documents/users/$(userId));
     }
     match /usernames/{username} {
       // Signed-in users can look up an exact username.
@@ -146,6 +151,7 @@ service cloud.firestore {
         && request.resource.data.displayName is string
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == username
         && request.resource.data.displayName == getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
     // Only totals are readable; friendship records remain participant-only.
     match /friendCounts/{userId} {
@@ -177,6 +183,8 @@ service cloud.firestore {
           );
       }
       allow update: if request.auth != null && validCountChange();
+      allow delete: if request.auth != null && request.auth.uid == userId
+        && !existsAfter(/databases/$(database)/documents/users/$(userId));
     }
     match /friendships/{friendshipId} {
       function countChanged(uid, delta) {
@@ -249,18 +257,18 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 
-      // Either participant may unfriend. Pending and declined requests cannot
-      // be deleted through this permission, and outsiders cannot remove a pair.
+      // Either participant may remove a pair. Accepted pairs must adjust both totals.
       allow delete: if request.auth != null
         && validPair(resource.data)
-        && resource.data.status == 'accepted'
         && request.auth.uid in resource.data.memberIds
-        && bothCountsChanged(-1);
+        && (resource.data.status in ['pending', 'declined']
+          || (resource.data.status == 'accepted' && bothCountsChanged(-1)));
 
       // Participants and usernames cannot be changed after creation.
       // Only the recipient can accept or decline a pending request.
       // The original sender can resend a declined request.
       allow update: if request.auth != null
+        && validUsernames(resource.data)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'updatedAt'])
         && request.resource.data.updatedAt == request.time
