@@ -14,6 +14,7 @@ import {
 import { db } from '@/config/firebase';
 import { friendshipId } from '@/features/friends/friendships';
 
+// The rules check each member's friendship, so keep groups within Firestore's lookup budget.
 export const MAX_GROUP_MEMBERS = 10;
 
 export type Group = {
@@ -32,6 +33,7 @@ export function groupMemberKey(memberIds: string[]): string {
     throw new Error(`Choose 1–${MAX_GROUP_MEMBERS - 1} friends for a group.`);
   }
   for (const uid of memberIds) friendshipId(uid, uid);
+  // This canonical key finds the same membership claim regardless of selection order.
   const sorted = [...memberIds].sort();
   if (new Set(sorted).size !== sorted.length) throw new Error('Each group member must be selected once.');
   return sorted.join('_');
@@ -44,6 +46,7 @@ async function findExistingGroup(
 ): Promise<string | null> {
   const membership = await transaction.get(membershipRef);
   if (!membership.exists()) return null;
+  // Reusing the claim preserves the original group and history if creation is retried.
   const existingId = membership.data().groupId;
   if (typeof existingId !== 'string' || !/^[A-Za-z0-9]{20}$/.test(existingId)) {
     throw new Error('The existing group could not be opened.');
@@ -60,6 +63,7 @@ async function requireAcceptedFriends(
   creatorUid: string,
   friendUids: string[],
 ): Promise<void> {
+  // Recheck friendship status inside the transaction so stale screen data cannot authorize creation.
   const friendRefs = friendUids.map((uid) => doc(db, 'friendships', friendshipId(creatorUid, uid)));
   const friendships = await Promise.all(friendRefs.map((ref) => transaction.get(ref)));
   const allAccepted = friendships.every((friendship, index) => friendship.exists()
@@ -75,11 +79,13 @@ export async function createGroup(creatorUid: string, friendUids: string[]): Pro
   const memberIds = [creatorUid, ...friendUids].sort();
   const key = groupMemberKey(memberIds);
   const membershipRef = doc(db, 'groupMemberships', key);
+  // Number groups per creator so each person's names can advance independently.
   const counterRef = doc(db, 'groupCounters', creatorUid);
   // Keep this random ID stable across Firestore's automatic transaction retries.
   const newGroupRef = doc(collection(db, 'groups'));
 
   const groupId = await runTransaction(db, async (transaction) => {
+    // Read the claim, counter, and friendships before writing; Firestore commits the writes atomically.
     const existingId = await findExistingGroup(transaction, membershipRef, key);
     if (existingId) {
       return existingId;

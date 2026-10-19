@@ -30,7 +30,9 @@ export function useAcceptedMessageFriends() {
     setLoading(true);
     setError(false);
     const profileCache = new Map<string, PublicProfile | null>();
+    // Share in-flight profile reads across snapshots and keep fetched profiles for this account session.
     const requests = new Map<string, Promise<PublicProfile | null>>();
+    // Older profile reads must not overwrite a newer friendship snapshot.
     let snapshotGeneration = 0;
     let latestRows: Array<{ uid: string; username: string }> = [];
     const unsubscribe = watchFriendships(user.uid, (relationships: Friendship[]) => {
@@ -41,6 +43,7 @@ export function useAcceptedMessageFriends() {
         const uid = friendship.memberIds.find((memberId) => memberId !== user.uid)!;
         return { uid, username: friendship.requesterId === uid ? friendship.requesterUsername : friendship.recipientUsername };
       });
+      // Async profile results are applied only to friends still present in the latest snapshot.
       latestRows = rows;
       setLoading(false);
       setError(false);
@@ -82,6 +85,7 @@ export function useAcceptedMessageFriends() {
     };
   }, [user?.uid, retry]);
 
+  // Avoid showing the prior account's friend list during the effect's first render after auth changes.
   const current = dataUid === (user?.uid ?? null);
   return { friends: current ? friends : [], loading: !current || loading, error: current && error, retry: () => setRetry((value) => value + 1), uid: dataUid };
 }

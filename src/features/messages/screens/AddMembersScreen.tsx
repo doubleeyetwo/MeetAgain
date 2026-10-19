@@ -23,6 +23,7 @@ export function AddMembersScreen() {
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  // State updates render later; the ref blocks a second tap in the same event turn.
   const busy = useRef(false);
   const mounted = useRef(true);
   const currentUid = useRef(user?.uid ?? null);
@@ -40,6 +41,7 @@ export function AddMembersScreen() {
   }, [navigation, saving]);
   useEffect(() => {
     if (loading) return;
+    // Drop selections that stopped being accepted friends while this screen stayed open.
     const available = new Set(friends.map((friend) => friend.uid));
     setSelected((current) => current.filter((uid) => available.has(uid)));
   }, [friends, loading]);
@@ -59,12 +61,14 @@ export function AddMembersScreen() {
     const availableIds = new Set(friends.map((friend) => friend.uid));
     if (!user || busy.current || loading || friendsError || selected.length === 0 || selected.length > MAX_SELECTED
       || selected.some((uid) => !availableIds.has(uid))) return;
+    // Capture the account at submission time so a late response cannot navigate another account.
     busy.current = true;
     setSaving(true);
     setSaveError('');
     const creatorUid = user.uid;
     try {
       const group = await createGroup(creatorUid, selected);
+      // The screen or signed-in account may have changed while Firestore was saving.
       if (!mounted.current || currentUid.current !== creatorUid) return;
       navigation.replace('Conversation', {
         kind: 'group',
