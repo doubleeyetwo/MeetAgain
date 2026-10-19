@@ -27,6 +27,17 @@ export type MainTabParamList = {
   Profile: undefined;
 };
 
+export type MessagesStackParamList = {
+  MessageList: undefined;
+  AddMembers: undefined;
+  Conversation: {
+    kind: 'friend' | 'group';
+    title: string;
+    memberIds: string[];
+    groupId?: string;
+  };
+};
+
 export type AppStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   EventDetails: { eventId: string };
