@@ -6,7 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AppStackParamList, MainTabParamList } from './types';
 
 import { HomeScreen } from '@/features/home/screens/HomeScreen';
-import { MessageFeedScreen } from '@/features/messages/screens/MessageFeedScreen';
+import { MessagesNavigator } from '@/features/messages/navigation/MessagesNavigator';
 import { EventCreationNavigator } from '@/features/events/navigation/EventCreationNavigator';
 import { CalendarViewScreen } from '@/features/calendar/screens/CalendarViewScreen';
 import { ProfileNavigator } from '@/features/profile/navigation/ProfileNavigator';
@@ -136,7 +136,7 @@ function MainTabs() {
 
       <Tabs.Screen
         name="Messages"
-        component={MessageFeedScreen}
+        component={MessagesNavigator}
       />
 
       <Tabs.Screen 
