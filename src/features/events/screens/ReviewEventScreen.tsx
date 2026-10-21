@@ -22,6 +22,10 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
 import {
+  pickPhotoFromLibrary,
+  takeProfilePhoto,
+} from '@/features/auth/profilePhoto';
+import {
   colors,
   fontFamily,
   gradients,
@@ -60,6 +64,9 @@ type SelectedEntry = {
 export function ReviewEventScreen({ navigation, route }: Props) {
   const { eventName, category } = route.params;
   const { user } = useAuth();
+
+  const [eventPhoto, setEventPhoto] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
 
   const [description, setDescription] = useState('');
   const [reminder, setReminder] = useState('24 hours before');
@@ -127,6 +134,78 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
   const formatPrice = (price: number) =>
     `$${price.toFixed(2)}`;
+
+  // EVENT PHOTO FUNCTIONS
+
+  const chooseEventPhoto = async (
+    source: 'camera' | 'library'
+  ) => {
+    if (photoLoading) return;
+
+    setPhotoLoading(true);
+
+    try {
+      const result =
+        source === 'camera'
+          ? await takeProfilePhoto()
+          : await pickPhotoFromLibrary();
+
+      if (result.error) {
+        Alert.alert('Photo Error', result.error);
+        return;
+      }
+
+      if (result.photo) {
+        setEventPhoto(result.photo.uri);
+      }
+    } catch {
+      Alert.alert(
+        'Photo Error',
+        'Unable to select your event photo. Please try again.'
+      );
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
+
+  const openPhotoOptions = () => {
+    if (photoLoading) return;
+
+    // Match Edit Profile's behavior on Expo Web.
+    if (Platform.OS === 'web') {
+      void chooseEventPhoto('library');
+      return;
+    }
+
+    Alert.alert(
+      'Event Photo',
+      'Choose an event cover photo',
+      [
+        {
+          text: 'Choose from Library',
+          onPress: () => void chooseEventPhoto('library'),
+        },
+        {
+          text: 'Take Photo',
+          onPress: () => void chooseEventPhoto('camera'),
+        },
+        ...(eventPhoto
+          ? [
+              {
+                text: 'Remove Photo',
+                onPress: () => setEventPhoto(null),
+              },
+            ]
+          : []),
+        {
+          text: 'Cancel',
+          style: 'cancel' as const,
+        },
+      ]
+    );
+  };
+
+  // ITEM / TASK HELPERS
 
   const getEntry = (selection: SelectedEntry | null) => {
     if (!selection) return null;
@@ -238,7 +317,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   const updateAssignment = (assign: boolean) => {
     if (!user || !assignmentEntry) return;
 
-    const update = <T extends { id: number; assigneeId: string | null }>(
+    const update = <
+      T extends { id: number; assigneeId: string | null }
+    >(
       entries: T[]
     ): T[] =>
       entries.map((entry) => {
@@ -262,22 +343,6 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     }
 
     setAssignmentEntry(null);
-  };
-
-  const confirmDelete = () => {
-    if (!deleteEntry) return;
-
-    if (deleteEntry.type === 'item') {
-      setItems((current) =>
-        current.filter((item) => item.id !== deleteEntry.id)
-      );
-    } else {
-      setTasks((current) =>
-        current.filter((task) => task.id !== deleteEntry.id)
-      );
-    }
-
-    setDeleteEntry(null);
   };
 
   const openDeleteConfirmation = () => {
@@ -364,19 +429,40 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.photoCircle}>
-          <Ionicons
-            name="camera-outline"
-            size={53}
-            color={colors.white}
-          />
-          <Ionicons
-            name="add"
-            size={23}
-            color={colors.white}
-            style={styles.cameraPlus}
-          />
-        </View>
+        {/* EVENT PHOTO - MATCHES EDIT PROFILE */}
+
+        <Pressable
+          style={styles.photoContainer}
+          onPress={openPhotoOptions}
+          disabled={photoLoading}
+          accessibilityRole="button"
+          accessibilityLabel={
+            eventPhoto ? 'Change event photo' : 'Add event photo'
+          }
+        >
+          <View style={styles.photoCircle}>
+            {eventPhoto ? (
+              <Image
+                source={{ uri: eventPhoto }}
+                style={styles.eventPhoto}
+              />
+            ) : (
+              <Ionicons
+                name="camera-outline"
+                size={48}
+                color={colors.white}
+              />
+            )}
+          </View>
+
+          <View style={styles.cameraBadge}>
+            <Ionicons
+              name="camera"
+              size={22}
+              color={colors.white}
+            />
+          </View>
+        </Pressable>
 
         <Text style={styles.eventTitle}>
           {eventName || 'Untitled Event'}
@@ -431,6 +517,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
           />
         </View>
 
+        {/* REMINDER DROPDOWN */}
+
         <View style={styles.reminderContainer}>
           <Pressable
             style={styles.reminderButton}
@@ -471,6 +559,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
           )}
         </View>
 
+        {/* ITEMS */}
+
         <SectionHeading title="Items" />
 
         {items.map((item) => (
@@ -478,7 +568,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
             key={item.id}
             style={[
               styles.planningRow,
-              isPressed('item', item.id) && styles.planningRowPressed,
+              isPressed('item', item.id) &&
+                styles.planningRowPressed,
             ]}
             onPressIn={() =>
               setPressedEntry({ type: 'item', id: item.id })
@@ -514,7 +605,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
               <Pressable
                 onPress={() => toggleItem(item.id)}
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: item.completed }}
+                accessibilityState={{
+                  checked: item.completed,
+                }}
               >
                 <Ionicons
                   name={
@@ -545,6 +638,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
           Total: {formatPrice(total)}
         </Text>
 
+        {/* TASKS */}
+
         <SectionHeading title="Tasks" />
 
         {tasks.map((task) => (
@@ -552,7 +647,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
             key={task.id}
             style={[
               styles.planningRow,
-              isPressed('task', task.id) && styles.planningRowPressed,
+              isPressed('task', task.id) &&
+                styles.planningRowPressed,
             ]}
             onPressIn={() =>
               setPressedEntry({ type: 'task', id: task.id })
@@ -581,7 +677,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
               <Pressable
                 onPress={() => toggleTask(task.id)}
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: task.completed }}
+                accessibilityState={{
+                  checked: task.completed,
+                }}
               >
                 <Ionicons
                   name={
@@ -623,6 +721,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         </Pressable>
       </ScrollView>
 
+      {/* CONFIRM EVENT */}
+
       <View style={styles.confirmContainer}>
         <Pressable
           onPress={() =>
@@ -646,7 +746,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         </Pressable>
       </View>
 
-      {/* Add Item / Task */}
+      {/* ADD ITEM / TASK MODAL */}
+
       <Modal
         visible={modalType !== null}
         transparent
@@ -655,7 +756,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={
+            Platform.OS === 'ios' ? 'padding' : undefined
+          }
         >
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
@@ -667,7 +770,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
               value={newName}
               onChangeText={setNewName}
               placeholder={
-                modalType === 'item' ? 'Item name' : 'Task name'
+                modalType === 'item'
+                  ? 'Item name'
+                  : 'Task name'
               }
               placeholderTextColor={colors.white}
               autoFocus
@@ -707,12 +812,15 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Assignment Details */}
+      {/* ASSIGNMENT MODAL */}
+
       <Modal
         visible={assignmentEntry !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setAssignmentEntry(null)}
+        onRequestClose={() =>
+          setAssignmentEntry(null)
+        }
       >
         <Pressable
           style={styles.modalOverlay}
@@ -720,7 +828,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         >
           <Pressable
             style={styles.modalCard}
-            onPress={(event) => event.stopPropagation()}
+            onPress={(event) =>
+              event.stopPropagation()
+            }
           >
             <Text style={styles.modalTitle}>
               {assignmentTarget?.name}
@@ -728,8 +838,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
             <View style={styles.assignmentProfile}>
               <View style={styles.assignmentAvatar}>
-                {assignmentTarget?.assigneeId === user?.uid &&
-                myPhoto ? (
+                {assignmentTarget?.assigneeId ===
+                  user?.uid && myPhoto ? (
                   <Image
                     source={{ uri: myPhoto }}
                     style={styles.assignmentPhoto}
@@ -757,7 +867,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
             {assignmentTarget?.assigneeId === user?.uid ? (
               <Pressable
                 style={styles.assignmentOption}
-                onPress={() => updateAssignment(false)}
+                onPress={() =>
+                  updateAssignment(false)
+                }
               >
                 <Ionicons
                   name="person-remove-outline"
@@ -771,7 +883,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
             ) : !assignmentTarget?.assigneeId ? (
               <Pressable
                 style={styles.assignmentOption}
-                onPress={() => updateAssignment(true)}
+                onPress={() =>
+                  updateAssignment(true)
+                }
                 disabled={!user}
               >
                 <Ionicons
@@ -791,7 +905,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
             <Pressable
               style={styles.assignmentCancelButton}
-              onPress={() => setAssignmentEntry(null)}
+              onPress={() =>
+                setAssignmentEntry(null)
+              }
             >
               <Text style={styles.modalActionText}>
                 Cancel
@@ -801,7 +917,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         </Pressable>
       </Modal>
 
-      {/* Long-Press Delete Menu */}
+      {/* LONG-PRESS DELETE MODAL */}
+
       <Modal
         visible={deleteEntry !== null}
         transparent
@@ -814,7 +931,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         >
           <Pressable
             style={styles.modalCard}
-            onPress={(event) => event.stopPropagation()}
+            onPress={(event) =>
+              event.stopPropagation()
+            }
           >
             <Text style={styles.modalTitle}>
               {deleteTarget?.name}
@@ -849,7 +968,11 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   );
 }
 
-function SectionHeading({ title }: { title: string }) {
+function SectionHeading({
+  title,
+}: {
+  title: string;
+}) {
   return (
     <View style={styles.sectionHeading}>
       <Text style={styles.sectionHeadingText}>
@@ -875,23 +998,43 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
 
+  // EVENT PHOTO
+
+  photoContainer: {
+    width: 113,
+    height: 113,
+    alignSelf: 'center',
+    marginTop: 22,
+    marginBottom: 14,
+  },
+
   photoCircle: {
     width: 113,
     height: 113,
     borderRadius: 57,
     backgroundColor: colors.cardDarker,
-    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 22,
-    marginBottom: 14,
+    overflow: 'hidden',
   },
 
-  cameraPlus: {
+  eventPhoto: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 57,
+  },
+
+  // Same badge dimensions and positioning as Edit Profile.
+  cameraBadge: {
     position: 'absolute',
-    right: 27,
-    top: 23,
-    backgroundColor: colors.cardDarker,
+    right: -6,
+    bottom: 0,
+    width: 45,
+    height: 45,
+    borderRadius: 23,
+    backgroundColor: colors.primaryAccent,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   eventTitle: {
@@ -958,6 +1101,8 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
+  // REMINDER
+
   reminderContainer: {
     marginBottom: 12,
   },
@@ -989,6 +1134,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingVertical: 12,
   },
+
+  // ITEMS AND TASKS
 
   sectionHeading: {
     flexDirection: 'row',
@@ -1025,7 +1172,10 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.025 }],
     elevation: 9,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
     shadowOpacity: 0.3,
     shadowRadius: 10,
     zIndex: 2,
@@ -1119,6 +1269,8 @@ const styles = StyleSheet.create({
     color: colors.red,
   },
 
+  // CONFIRM BUTTON
+
   confirmContainer: {
     paddingHorizontal: 1,
     paddingTop: 10,
@@ -1143,6 +1295,8 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 17,
   },
+
+  // MODALS
 
   modalOverlay: {
     flex: 1,
