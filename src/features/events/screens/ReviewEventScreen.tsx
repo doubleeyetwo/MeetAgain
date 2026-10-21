@@ -24,6 +24,10 @@ import {colors,
 } from '@/theme';
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import {
+  formatEventDate,
+  formatEventTime,
+} from '@/features/events/eventTimes';
 
 type Props = NativeStackScreenProps<
   EventCreationStackParamList,
@@ -49,7 +53,11 @@ export function ReviewEventScreen({
   navigation,
   route,
 }: Props) {
-  const { eventName, category } = route.params;
+  const { eventName, category, startAt, endAt } = route.params;
+  const eventTimes = {
+    start: new Date(startAt),
+    end: new Date(endAt),
+  };
 
   const [description, setDescription] = useState('');
   const [reminder, setReminder] = useState('24 hours before');
@@ -209,7 +217,7 @@ export function ReviewEventScreen({
             </Text>
 
             <Text style={styles.eventInfoText}>
-              Date not selected
+              {formatEventDate(eventTimes)}
             </Text>
           </View>
 
@@ -234,7 +242,7 @@ export function ReviewEventScreen({
                 color={colors.white}
               />
               <Text style={styles.eventInfoText}>
-                Time not selected
+                {formatEventTime(eventTimes)}
               </Text>
             </View>
           </View>
