@@ -353,6 +353,29 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 80
         && request.resource.data.updatedAt == request.time;
+        match /messages/{messageId} {
+          function isGroupMember() {
+            return request.auth != null
+            && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+          }
+
+          function validMessage() {
+            let message = request.resource.data;
+
+            return message.keys().hasAll(['senderId', 'text', 'createdAt'])
+            && message.keys().hasOnly(['senderId', 'text', 'createdAt'])
+            && message.senderId == request.auth.uid
+            && message.text is string
+            && message.text.size() > 0
+            && message.text.size() <= 2000
+            && message.text.matches('[\\s\\S]*\\S[\\s\\S]*')
+            && message.createdAt == request.time;
+          }
+
+          allow read: if isGroupMember();
+          allow create: if isGroupMember() && validMessage();
+          allow update, delete: if false; //We can add editing and deleting messages as a stretch goal here
+        }
     }
     match /groupMemberships/{memberKey} {
       // Missing claims can be checked by prospective members during creation.
@@ -372,6 +395,7 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.latestNumber == request.resource.data.sequence
         && getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.lastMemberKey == memberKey;
     }
+
     match /groupCounters/{creatorId} {
       function validCounter() {
         return request.auth != null

@@ -2,7 +2,7 @@ import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabBarProps, createBottomTabNavigator,} from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { AppStackParamList, MainTabParamList } from './types';
 
 import { HomeScreen } from '@/features/home/screens/HomeScreen';
@@ -20,6 +20,14 @@ function BottomTabBar({
   state,
   navigation,
 }: BottomTabBarProps) {
+  // Find the selected tab, then inspect the screen inside its nested navigator.
+const activeTab = state.routes[state.index];
+const activeScreen = getFocusedRouteNameFromRoute(activeTab);
+
+// Returning null removes the bar and lets the conversation use that space.
+if (activeTab.name === 'Messages' && activeScreen === 'Conversation') {
+  return null;
+}
   const renderTab = (
     routeName: keyof MainTabParamList,
     iconName: keyof typeof Ionicons.glyphMap
