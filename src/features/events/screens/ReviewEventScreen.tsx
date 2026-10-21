@@ -66,9 +66,12 @@ type SelectedEntry = {
 };
 
 export function ReviewEventScreen({ navigation, route }: Props) {
-  const { eventName, category } = route.params;
+  const { eventName, category, startAt, endAt } = route.params;
+  const eventTimes = {
+    start: new Date(startAt),
+    end: new Date(endAt),
+  };
   const { user } = useAuth();
-
   const [eventPhoto, setEventPhoto] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
 
