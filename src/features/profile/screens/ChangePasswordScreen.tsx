@@ -19,16 +19,11 @@ import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 
 import { auth } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { requestPasswordReset } from '@/features/auth/passwordReset';
+import { PASSWORD_REQUIREMENTS } from '@/features/auth/passwordRules';
 import { ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, sizes, spacing, text } from '@/theme';
 
 type ProfileNavigation = NativeStackNavigationProp<ProfileStackParamList>;
-
-const REQUIREMENTS = [
-  { label: 'At least 8 characters', test: (value: string) => value.length >= 8 },
-  { label: 'One uppercase letter', test: (value: string) => /[A-Z]/.test(value) },
-  { label: 'One number or symbol', test: (value: string) => /[^A-Za-z]/.test(value) },
-];
 
 const STRENGTH_SEGMENTS = 4;
 const STRONG_LENGTH = 12;
@@ -37,8 +32,8 @@ const STRONG_LENGTH = 12;
    and the fourth is reserved for a comfortably long password. */
 function strengthScore(value: string): number {
   if (!value) return 0;
-  const met = REQUIREMENTS.filter((requirement) => requirement.test(value)).length;
-  return met === REQUIREMENTS.length && value.length >= STRONG_LENGTH ? STRENGTH_SEGMENTS : met;
+  const met = PASSWORD_REQUIREMENTS.filter((requirement) => requirement.test(value)).length;
+  return met === PASSWORD_REQUIREMENTS.length && value.length >= STRONG_LENGTH ? STRENGTH_SEGMENTS : met;
 }
 
 function LabelledField(props: {
@@ -80,7 +75,7 @@ export function ChangePasswordScreen() {
   const [notice, setNotice] = useState('');
 
   const score = strengthScore(newPassword);
-  const unmet = REQUIREMENTS.filter((requirement) => !requirement.test(newPassword));
+  const unmet = PASSWORD_REQUIREMENTS.filter((requirement) => !requirement.test(newPassword));
 
   const onUpdate = async () => {
     // The ref closes the same-tick double-tap window before React updates the disabled state.
@@ -230,7 +225,7 @@ export function ChangePasswordScreen() {
             />
 
             <Text style={styles.requirementsTitle}>Your password must have:</Text>
-            {REQUIREMENTS.map((requirement) => {
+            {PASSWORD_REQUIREMENTS.map((requirement) => {
               const met = requirement.test(newPassword);
               return (
                 <View key={requirement.label} style={styles.requirement}>

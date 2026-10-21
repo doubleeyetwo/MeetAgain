@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { EventTemplatesScreen } from '@/features/events/screens/EventTemplatesScreen';
 import { CreateEventScreen } from '@/features/events/screens/CreateEventScreen';
+import { PickTimeScreen } from '@/features/events/screens/PickTimeScreen';
 import { ReviewEventScreen } from '@/features/events/screens/ReviewEventScreen';
 
 export type EventCreationStackParamList = {
@@ -13,10 +14,19 @@ export type EventCreationStackParamList = {
     category?: string;
   } | undefined;
 
+  PickTime: {
+    eventName: string;
+    category: string;
+    presetId?: string;
+  };
+
   ReviewEvent: {
     eventName: string;
     category: string;
     presetId?: string;
+    // ISO strings, because navigation params must be serializable.
+    startAt: string;
+    endAt: string;
   };
 };
 
@@ -39,6 +49,11 @@ export function EventCreationNavigator() {
       <Stack.Screen
         name="EventDetails"
         component={CreateEventScreen}
+      />
+
+      <Stack.Screen
+        name="PickTime"
+        component={PickTimeScreen}
       />
 
       <Stack.Screen

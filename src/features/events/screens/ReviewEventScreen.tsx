@@ -33,6 +33,10 @@ import {
 } from '@/theme';
 import type { UserProfile } from '@/types/models';
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import {
+  formatEventDate,
+  formatEventTime,
+} from '@/features/events/eventTimes';
 
 type Props = NativeStackScreenProps<
   EventCreationStackParamList,
@@ -62,9 +66,12 @@ type SelectedEntry = {
 };
 
 export function ReviewEventScreen({ navigation, route }: Props) {
-  const { eventName, category } = route.params;
+  const { eventName, category, startAt, endAt } = route.params;
+  const eventTimes = {
+    start: new Date(startAt),
+    end: new Date(endAt),
+  };
   const { user } = useAuth();
-
   const [eventPhoto, setEventPhoto] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
 
@@ -474,7 +481,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
               {category || 'No Category'}
             </Text>
             <Text style={styles.eventInfoText}>
-              Date not selected
+              {formatEventDate(eventTimes)}
             </Text>
           </View>
 
@@ -499,7 +506,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
                 color={colors.white}
               />
               <Text style={styles.eventInfoText}>
-                Time not selected
+                {formatEventTime(eventTimes)}
               </Text>
             </View>
           </View>
