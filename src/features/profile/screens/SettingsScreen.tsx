@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '@/features/auth/AuthContext';
+import { deleteAccount } from '@/features/profile/deleteAccount';
 import { ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, spacing, text } from '@/theme';
 
@@ -48,14 +49,16 @@ function SettingsCard({ title, children }: { title: string; children: React.Reac
   );
 }
 
-type PillProps = { label: string; color: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap };
+type PillProps = { label: string; color: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap; disabled?: boolean };
 
-function PillButton({ label, color, onPress, icon }: PillProps) {
+function PillButton({ label, color, onPress, icon, disabled }: PillProps) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [styles.pill, pressed && styles.pressed]}
     >
       {icon ? <Ionicons name={icon} size={20} color={color} style={styles.pillIcon} /> : null}
@@ -66,14 +69,17 @@ function PillButton({ label, color, onPress, icon }: PillProps) {
 
 export function SettingsScreen() {
   const navigation = useNavigation<ProfileNavigation>();
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const busyRef = useRef(false);
+  const confirmationOpen = useRef(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const onLogOut = async () => {
     // The ref closes the same-tick double-tap window before React updates the disabled state.
     if (busyRef.current) return;
     busyRef.current = true;
+    setBusy(true);
     setError('');
     try {
       await signOut();
@@ -81,6 +87,41 @@ export function SettingsScreen() {
       setError('Could not log out. Please try again.');
     } finally {
       busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const onDeleteAccount = () => {
+    if (busyRef.current || confirmationOpen.current || !user) return;
+    confirmationOpen.current = true;
+    const message = 'Permanently delete your account, profile, and friendships? This cannot be undone.';
+    if (Platform.OS === 'web') {
+      const confirmed = globalThis.confirm(message);
+      confirmationOpen.current = false;
+      if (confirmed) void confirmDeleteAccount();
+      return;
+    }
+    Alert.alert('Delete Account', message, [
+      { text: 'Cancel', style: 'cancel', onPress: () => { confirmationOpen.current = false; } },
+      { text: 'Delete', style: 'destructive', onPress: () => {
+        confirmationOpen.current = false;
+        void confirmDeleteAccount();
+      } },
+    ]);
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (busyRef.current || !user) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await deleteAccount(user);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not finish deleting your account. Please try again.');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
   };
 
@@ -145,13 +186,12 @@ export function SettingsScreen() {
               // Destination is Google Calendar Integration (#44).
               onPress={() => {}}
             />
-            <PillButton label="Log Out" color={colors.danger} onPress={onLogOut} />
+            <PillButton label="Log Out" color={colors.danger} onPress={onLogOut} disabled={busy} />
             <PillButton
-              label="Deactivate Account"
+              label={busy ? 'Please wait...' : 'Delete Account'}
               color={colors.danger}
-              // Deliberately inert: deleting an account is irreversible and has no issue or
-              // agreed behaviour yet. Wire it only once that is specified.
-              onPress={() => {}}
+              onPress={onDeleteAccount}
+              disabled={busy}
             />
           </View>
 
