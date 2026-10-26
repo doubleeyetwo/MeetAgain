@@ -293,6 +293,126 @@ service cloud.firestore {
           )
         );
     }
+    // A canonical member-set claim gives every exact set one stable random group ID.
+    // The creator is the first administrator; membership changes are not supported.
+    match /groups/{groupId} {
+      function validMemberIds(data) {
+        let members = data.memberIds;
+        return members is list
+          && members.size() >= 2 && members.size() <= 10
+          && members.join('_').matches('^[A-Za-z0-9]{1,128}(_[A-Za-z0-9]{1,128}){1,9}$')
+          && (members.size() <= 1 || members[0] < members[1])
+          && (members.size() <= 2 || members[1] < members[2])
+          && (members.size() <= 3 || members[2] < members[3])
+          && (members.size() <= 4 || members[3] < members[4])
+          && (members.size() <= 5 || members[4] < members[5])
+          && (members.size() <= 6 || members[5] < members[6])
+          && (members.size() <= 7 || members[6] < members[7])
+          && (members.size() <= 8 || members[7] < members[8])
+          && (members.size() <= 9 || members[8] < members[9]);
+      }
+      function acceptedFriend(creatorId, memberId) {
+        let pairId = creatorId < memberId
+          ? creatorId + '_' + memberId : memberId + '_' + creatorId;
+        return get(/databases/$(database)/documents/friendships/$(pairId)).data.status == 'accepted';
+      }
+      function allSelectedFriends(data) {
+        let members = data.memberIds;
+        let creatorId = data.createdBy;
+        return (members[0] == creatorId || acceptedFriend(creatorId, members[0]))
+          && (members.size() <= 1 || members[1] == creatorId || acceptedFriend(creatorId, members[1]))
+          && (members.size() <= 2 || members[2] == creatorId || acceptedFriend(creatorId, members[2]))
+          && (members.size() <= 3 || members[3] == creatorId || acceptedFriend(creatorId, members[3]))
+          && (members.size() <= 4 || members[4] == creatorId || acceptedFriend(creatorId, members[4]))
+          && (members.size() <= 5 || members[5] == creatorId || acceptedFriend(creatorId, members[5]))
+          && (members.size() <= 6 || members[6] == creatorId || acceptedFriend(creatorId, members[6]))
+          && (members.size() <= 7 || members[7] == creatorId || acceptedFriend(creatorId, members[7]))
+          && (members.size() <= 8 || members[8] == creatorId || acceptedFriend(creatorId, members[8]))
+          && (members.size() <= 9 || members[9] == creatorId || acceptedFriend(creatorId, members[9]));
+      }
+      allow get, list: if request.auth != null && request.auth.uid in resource.data.memberIds;
+      allow create: if request.auth != null
+        && groupId.matches('^[A-Za-z0-9]{20}$')
+        && request.resource.data.keys().hasAll(['name', 'memberIds', 'createdBy', 'adminIds', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'memberIds', 'createdBy', 'adminIds', 'createdAt', 'updatedAt'])
+        && validMemberIds(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.adminIds == [request.auth.uid]
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && allSelectedFriends(request.resource.data)
+        && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.groupId == groupId
+        && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.memberIds == request.resource.data.memberIds
+        && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.createdBy == request.auth.uid
+        && request.resource.data.name == 'Group' + string(getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.sequence);
+      allow update: if request.auth != null
+        && request.auth.uid in resource.data.adminIds
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.updatedAt == request.time;
+        match /messages/{messageId} {
+          function isGroupMember() {
+            return request.auth != null
+            && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+          }
+
+          function validMessage() {
+            let message = request.resource.data;
+
+            return message.keys().hasAll(['senderId', 'text', 'createdAt'])
+            && message.keys().hasOnly(['senderId', 'text', 'createdAt'])
+            && message.senderId == request.auth.uid
+            && message.text is string
+            && message.text.size() > 0
+            && message.text.size() <= 2000
+            && message.text.matches('[\\s\\S]*\\S[\\s\\S]*')
+            && message.createdAt == request.time;
+          }
+
+          allow read: if isGroupMember();
+          allow create: if isGroupMember() && validMessage();
+          allow update, delete: if false; //We can add editing and deleting messages as a stretch goal here
+        }
+    }
+    match /groupMemberships/{memberKey} {
+      // Missing claims can be checked by prospective members during creation.
+      allow get: if request.auth != null && request.auth.uid in memberKey.split('_');
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['groupId', 'memberIds', 'createdBy', 'sequence'])
+        && request.resource.data.keys().hasOnly(['groupId', 'memberIds', 'createdBy', 'sequence'])
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.join('_') == memberKey
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence > 0
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.memberIds == request.resource.data.memberIds
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.createdBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.name == 'Group' + string(request.resource.data.sequence)
+        && getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.latestNumber == request.resource.data.sequence
+        && getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.lastMemberKey == memberKey;
+    }
+
+    match /groupCounters/{creatorId} {
+      function validCounter() {
+        return request.auth != null
+          && request.auth.uid == creatorId
+          && request.resource.data.keys().hasAll(['latestNumber', 'lastMemberKey'])
+          && request.resource.data.keys().hasOnly(['latestNumber', 'lastMemberKey'])
+          && request.resource.data.latestNumber is int
+          && request.resource.data.latestNumber > 0
+          && request.resource.data.lastMemberKey is string
+          && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.lastMemberKey)).data.createdBy == creatorId
+          && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.lastMemberKey)).data.sequence == request.resource.data.latestNumber;
+      }
+      allow get: if request.auth != null && request.auth.uid == creatorId;
+      allow create: if validCounter() && request.resource.data.latestNumber == 1;
+      allow update: if validCounter()
+        && request.resource.data.latestNumber == resource.data.latestNumber + 1;
+    }
     match /{document=**} {
       allow read, write: if false;
     }
