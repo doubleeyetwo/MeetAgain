@@ -37,6 +37,10 @@ import {
   formatEventDate,
   formatEventTime,
 } from '@/features/events/eventTimes';
+import { EditPhoto } from '@/components/EditPhoto';
+
+import { createEvent } from '@/features/events/eventService';
+import { createGroup } from '@/features/messages/groups';
 
 type Props = NativeStackScreenProps<
   EventCreationStackParamList,
@@ -60,26 +64,31 @@ type EventTask = {
 
 type AddType = 'item' | 'task';
 
-
 type SelectedEntry = {
   type: AddType;
   id: number;
 };
 
-export function ReviewEventScreen({
-  navigation,
-  route,
-}: Props) {
-  const { eventName, category, startAt, endAt } = route.params;
-  const { user } = useAuth();
-
-  const [eventPhoto, setEventPhoto] = useState<string | null>(null);
-  const [photoLoading, setPhotoLoading] = useState(false);
+export function ReviewEventScreen({ navigation, route }: Props) {
+  const {
+  eventName,
+  category,
+  startAt,
+  endAt,
+  eventPhoto: initialEventPhoto,
+  selectedMemberIds = [],
+} = route.params;
 
   const eventTimes = {
     start: new Date(startAt),
     end: new Date(endAt),
   };
+  const { user } = useAuth();
+  const [eventPhoto, setEventPhoto] = useState<string | null>(
+  initialEventPhoto ?? null
+);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [savingEvent, setSavingEvent] = useState(false);
 
   const [description, setDescription] = useState('');
   const [reminder, setReminder] = useState('24 hours before');
@@ -422,6 +431,56 @@ export function ReviewEventScreen({
     </View>
   );
 
+  const handleConfirmEvent = async () => {
+  if (!user || savingEvent) return;
+
+  try {
+setSavingEvent(true);
+
+const participantIds = [...new Set([
+  user.uid,
+  ...selectedMemberIds,
+])].sort();
+
+let groupId: string | null = null;
+
+if (participantIds.length > 1) {
+  const friendIds = participantIds.filter(
+    (id) => id !== user.uid
+  );
+
+  const group = await createGroup(user.uid, friendIds);
+  groupId = group.id;
+}
+
+const eventId = await createEvent({
+  creatorId: user.uid,
+  title: eventName,
+  category,
+  description,
+  startAt,
+  endAt,
+  groupId,
+  participantIds,
+  items,
+  tasks,
+  reminderMinutesBefore: {
+    '30 minutes before': 30,
+    '1 hour before': 60,
+    '2 hours before': 120,
+    '24 hours before': 1440,
+  }[reminder] ?? null,
+});
+
+Alert.alert('Event Created', `Event saved! ID: ${eventId}`);
+} catch (error) {
+    console.error('Failed to create event:', error);
+    Alert.alert('Error', 'Unable to save event. Please try again.');
+  } finally {
+    setSavingEvent(false);
+  }
+};
+
   return (
     <View style={styles.screen}>
       <LinearGradient
@@ -444,38 +503,15 @@ export function ReviewEventScreen({
       >
         {/* EVENT PHOTO - MATCHES EDIT PROFILE */}
 
-        <Pressable
-          style={styles.photoContainer}
-          onPress={openPhotoOptions}
-          disabled={photoLoading}
-          accessibilityRole="button"
-          accessibilityLabel={
-            eventPhoto ? 'Change event photo' : 'Add event photo'
-          }
-        >
-          <View style={styles.photoCircle}>
-            {eventPhoto ? (
-              <Image
-                source={{ uri: eventPhoto }}
-                style={styles.eventPhoto}
-              />
-            ) : (
-              <Ionicons
-                name="camera-outline"
-                size={48}
-                color={colors.white}
-              />
-            )}
-          </View>
-
-          <View style={styles.cameraBadge}>
-            <Ionicons
-              name="camera"
-              size={22}
-              color={colors.white}
-            />
-          </View>
-        </Pressable>
+        {/* EVENT PHOTO */}
+        <View style={styles.photoContainer}>
+          <EditPhoto
+            photoUri={eventPhoto}
+            onPress={openPhotoOptions}
+            size={120}
+            disabled={photoLoading}
+          />
+        </View>
 
         <Text style={styles.eventTitle}>
           {eventName || 'Untitled Event'}
@@ -738,12 +774,8 @@ export function ReviewEventScreen({
 
       <View style={styles.confirmContainer}>
         <Pressable
-          onPress={() =>
-            Alert.alert(
-              'Confirm Event',
-              'Saving events will be connected later.'
-            )
-          }
+          onPress={() => void handleConfirmEvent()}
+          disabled={savingEvent}
           style={styles.confirmButton}
         >
           <LinearGradient

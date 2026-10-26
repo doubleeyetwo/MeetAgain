@@ -1,0 +1,85 @@
+import {
+  onSnapshot,
+  query,
+  orderBy,
+  limit,
+  addDoc,
+  collection,
+  serverTimestamp,
+  type Timestamp,
+} from 'firebase/firestore';
+import { db } from '@/config/firebase';
+
+export const MAX_MESSAGE_LENGTH = 2000;
+
+export type GroupMessage = {
+  id: string;
+  senderId: string;
+  text: string;
+
+  // A local message can appear before Firestore resolves its server timestamp.
+  createdAt: Timestamp | null;
+};
+
+export async function sendGroupMessage(
+  groupId: string,
+  senderId: string,
+  text: string,
+): Promise<void> {
+  // Trim whitespace from the beginning and end of the text.
+  const trimmedText = text.trim();
+
+  // Message validation
+  if (trimmedText.length === 0) {
+    throw new Error('Write a message before sending.')
+  }
+
+  if (trimmedText.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`Messages must be ${MAX_MESSAGE_LENGTH} characters or fewer.`);
+  }
+
+  // Reference groups/{groupId}/messages using collection().
+  const messagesRef = collection(db, 'groups', groupId, 'messages');
+
+  // Firestore rules will verify that senderId is the authenticated group member.
+  await addDoc(messagesRef, {
+    senderId: senderId,
+    text: trimmedText,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export function watchGroupMessages(
+  groupId: string,
+  onChange: (messages: GroupMessage[]) => void,
+  onError: (error: Error) => void,
+): () => void {
+  // Read the newest 50 messages to keep the initial download bounded.
+  const messagesQuery = query(
+    collection(db, 'groups', groupId, 'messages'),
+    orderBy('createdAt', 'desc'),
+    limit(50),
+  );
+
+  // Return the unsubscribe function so the screen can stop listening on exit.
+  return onSnapshot(
+    messagesQuery,
+    (snapshot) => {
+      const messages = snapshot.docs.map((messageDoc) => {
+        return {
+          ...messageDoc.data(),
+          id: messageDoc.id,
+        } as GroupMessage;
+      });
+
+      // The query selects the latest 50 messages, newest first.
+      // Reverse our new array so the screen receives them oldest first.
+      messages.reverse();
+
+      // Call the function supplied by the screen with the complete message array.
+      // The screen can use this callback to replace its messages state.
+      onChange(messages);
+    },
+    onError,
+  );
+}

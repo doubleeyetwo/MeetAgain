@@ -20,6 +20,22 @@ export type UserProfile = {
   updatedAt: Timestamp;
 };
 
+
+export type EventItem = {
+  id: number;
+  name: string;
+  price: number;
+  completed: boolean;
+  assigneeId: string | null;
+};
+
+export type EventTask = {
+  id: number;
+  name: string;
+  completed: boolean;
+  assigneeId: string | null;
+};
+
 export type MeetEvent = {
   id: string;
   creatorId: string;
@@ -32,7 +48,21 @@ export type MeetEvent = {
   status: 'draft' | 'polling' | 'confirmed' | 'cancelled';
   createdAt: Timestamp;
   updatedAt: Timestamp;
+
+  // Additional event details
+  category?: string;
+  groupId?: string | null;
+  photoURL?: string | null;
+
+  // Planning
+  items?: EventItem[];
+  tasks?: EventTask[];
+
+  // Invitations and reminders
+  rsvps?: Record<string, 'yes' | 'no' | 'pending'>;
+  reminderMinutesBefore?: number | null;
 };
+
 
 export type AvailabilityPoll = {
   id: string;
@@ -69,3 +99,4 @@ export type PublicProfile = {
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
+

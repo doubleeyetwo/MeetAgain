@@ -58,17 +58,16 @@ export function PickTimeScreen({
   const error = validateEventTimes(times);
 
   const handleConfirmTime = () => {
-    if (error) {
-      return;
-    }
+  if (error) {
+    return;
+  }
 
-    // Dates aren't serializable navigation params, so they travel as ISO strings.
-    navigation.navigate('ReviewEvent', {
-      ...route.params,
-      startAt: times.start.toISOString(),
-      endAt: times.end.toISOString(),
-    });
-  };
+  navigation.navigate('SelectMembers', {
+    ...route.params,
+    startAt: times.start.toISOString(),
+    endAt: times.end.toISOString(),
+  });
+};
 
   return (
     <View style={styles.screen}>

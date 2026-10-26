@@ -254,6 +254,7 @@ export function EditProfileScreen() {
                       <Ionicons name="person" size={44} color={colors.white} />
                     </View>
                   )}
+
                   <View style={styles.cameraBadge}>
                     <Ionicons name="camera" size={22} color={colors.white} />
                   </View>

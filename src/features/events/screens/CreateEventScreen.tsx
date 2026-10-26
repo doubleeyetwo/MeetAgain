@@ -1,6 +1,8 @@
 
 import { useState } from 'react';
 import {
+  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,7 +16,12 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
+import {
+  pickPhotoFromLibrary,
+  takeProfilePhoto,
+} from '@/features/auth/profilePhoto';
 import { colors, fontFamily, radius, spacing } from '@/theme';
+import { EditPhoto } from '@/components/EditPhoto';
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
@@ -32,10 +39,7 @@ const EVENT_CATEGORIES = [
   'Other',
 ];
 
-export function CreateEventScreen({
-  navigation,
-  route,
-}: Props) {
+export function CreateEventScreen({ navigation, route }: Props) {
   const [eventName, setEventName] = useState('');
   const [category, setCategory] = useState(
     route.params?.category ?? ''
@@ -43,16 +47,87 @@ export function CreateEventScreen({
   const [customCategory, setCustomCategory] = useState('');
   const [showCategories, setShowCategories] = useState(false);
 
+  const [eventPhoto, setEventPhoto] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+
   const resolvedCategory =
     category === 'Other'
       ? customCategory.trim()
       : category;
+
+  const chooseEventPhoto = async (
+    source: 'camera' | 'library'
+  ) => {
+    if (photoLoading) return;
+
+    setPhotoLoading(true);
+
+    try {
+      const result =
+        source === 'camera'
+          ? await takeProfilePhoto()
+          : await pickPhotoFromLibrary();
+
+      if (result.error) {
+        Alert.alert('Photo Error', result.error);
+        return;
+      }
+
+      if (result.photo) {
+        setEventPhoto(result.photo.dataUrl);
+      }
+    } catch {
+      Alert.alert(
+        'Photo Error',
+        'Unable to select your event photo. Please try again.'
+      );
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
+
+  const openPhotoOptions = () => {
+    if (photoLoading) return;
+
+    if (Platform.OS === 'web') {
+      void chooseEventPhoto('library');
+      return;
+    }
+
+    Alert.alert(
+      'Event Photo',
+      'Choose an event cover photo',
+      [
+        {
+          text: 'Choose from Library',
+          onPress: () => void chooseEventPhoto('library'),
+        },
+        {
+          text: 'Take Photo',
+          onPress: () => void chooseEventPhoto('camera'),
+        },
+        ...(eventPhoto
+          ? [
+              {
+                text: 'Remove Photo',
+                onPress: () => setEventPhoto(null),
+              },
+            ]
+          : []),
+        {
+          text: 'Cancel',
+          style: 'cancel' as const,
+        },
+      ]
+    );
+  };
 
   const handleConfirmDetails = () => {
     navigation.navigate('PickTime', {
       eventName: eventName.trim(),
       category: resolvedCategory,
       presetId: route.params?.presetId,
+      eventPhoto,
     });
   };
 
@@ -67,17 +142,22 @@ export function CreateEventScreen({
       />
 
       <View style={styles.content}>
-        <Pressable style={styles.photoArea}>
-          <View style={styles.photoCircle}>
-            <Ionicons
-              name="camera-outline"
-              size={54}
-              color={colors.white}
-            />
-          </View>
+  <View style={styles.photoArea}>
+    <EditPhoto
+      photoUri={eventPhoto}
+      onPress={openPhotoOptions}
+      size={120}
+      disabled={photoLoading}
+    />
 
-          <Text style={styles.photoText}>Add Photo</Text>
-        </Pressable>
+    <Text style={styles.photoText}>
+      {photoLoading
+        ? 'Loading Photo...'
+        : eventPhoto
+          ? 'Change Photo'
+          : 'Add Photo'}
+    </Text>
+</View>
 
         <View style={styles.form}>
           <TextInput
@@ -182,6 +262,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardDarker,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  eventPhoto: {
+    width: '100%',
+    height: '100%',
   },
 
   photoText: {
