@@ -19,7 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { useAuth, ProfilePhoto } from '@/features/auth/AuthContext';
+import { useAuth, ProfilePhoto, GoogleProfilePhoto } from '@/features/auth/AuthContext';
+import { splitGoogleDisplayName } from '@/features/auth/profileOnboarding';
 import {
   PROFILE_PHOTO_COMPRESSION,
   PROFILE_PHOTO_JPEG_PREFIX,
@@ -34,20 +35,35 @@ type AuthNavigation = NativeStackNavigationProp<AuthStackParamList>;
 
 export function CreateProfileScreen() {
   const navigation = useNavigation<AuthNavigation>();
-  const { createAccount, profilePending } = useAuth();
+  const { createAccount, signOut, profilePending, pendingProfileDetails } = useAuth();
   const busyRef = useRef(false);
+  const prefilledRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [photo, setPhoto] = useState<ProfilePhoto | undefined>();
+  const [photo, setPhoto] = useState<ProfilePhoto | GoogleProfilePhoto | undefined>();
   const [photoBusy, setPhotoBusy] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     navigation.setOptions({ gestureEnabled: !busy && !profilePending });
   }, [navigation, busy, profilePending]);
+
+  useEffect(() => {
+    if (!profilePending || !pendingProfileDetails || prefilledRef.current) return;
+    prefilledRef.current = true;
+    const names = splitGoogleDisplayName(pendingProfileDetails.displayName);
+    setFirstName((current) => current || names.firstName);
+    setLastName((current) => current || names.lastName);
+    if (pendingProfileDetails.photoURL) {
+      setPhoto((current) => current ?? {
+        uri: pendingProfileDetails.photoURL,
+        photoURL: pendingProfileDetails.photoURL,
+      });
+    }
+  }, [profilePending, pendingProfileDetails]);
 
   const usePickedPhoto = async (result: ImagePicker.ImagePickerResult) => {
     if (result.canceled) return;
@@ -156,9 +172,36 @@ export function CreateProfileScreen() {
         case 'auth/operation-not-allowed':
           setError('Email and password signup is not enabled in Firebase yet.');
           break;
+        case 'permission-denied':
+          setError('We could not save your profile because access was denied. Please try again later.');
+          break;
+        case 'unavailable':
+          setError('Profile setup is temporarily unavailable. Check your connection and try again.');
+          break;
         default:
           setError(failure instanceof Error ? failure.message : 'Could not finish signup. Please try again.');
       }
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const onBack = async () => {
+    if (busyRef.current || photoBusy) return;
+    if (!profilePending) {
+      navigation.goBack();
+      return;
+    }
+
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await signOut();
+      // Signed-out routes replace this screen when the auth context updates.
+    } catch {
+      setError('Could not leave profile setup. Please try again.');
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -182,9 +225,9 @@ export function CreateProfileScreen() {
             <View style={styles.header}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Back to password"
-                onPress={() => navigation.goBack()}
-                disabled={busy || profilePending}
+                accessibilityLabel={profilePending ? 'Back to registration' : 'Back to password'}
+                onPress={onBack}
+                disabled={busy || photoBusy}
                 hitSlop={12}
                 style={styles.backButton}
               >
@@ -203,7 +246,7 @@ export function CreateProfileScreen() {
               {photo ? (
                 <Image source={{ uri: photo.uri }} style={styles.photoPreview} />
               ) : (
-                <Svg width={38} height={38} viewBox="0 0 40 40" fill="none" accessibilityElementsHidden>
+                <Svg width={38} height={38} viewBox="0 0 40 40" fill="none" aria-hidden={true}>
                   <Path
                     d="M6 13h6l3-4h10l3 4h6v18H6V13Z"
                     stroke={colors.white}
@@ -221,6 +264,11 @@ export function CreateProfileScreen() {
               )}
             </Pressable>
             <Text style={styles.photoHint}>{photoBusy ? 'Preparing photo...' : 'Add a photo (optional)'}</Text>
+            {photo ? (
+              <Pressable accessibilityRole="button" onPress={() => setPhoto(undefined)} disabled={busy || photoBusy}>
+                <Text style={styles.photoHint}>Remove photo</Text>
+              </Pressable>
+            ) : null}
 
             <View style={styles.fields}>
               <Text style={styles.label}>First Name</Text>
@@ -312,7 +360,7 @@ export function CreateProfileScreen() {
                 {...gradientDirection.horizontal}
                 style={styles.buttonFill}
               >
-                <Text style={styles.buttonText}>{busy ? 'Creating profile...' : profilePending ? 'Retry Join MeetAgain' : 'Join MeetAgain'}</Text>
+                <Text style={styles.buttonText}>{busy ? 'Creating profile...' : 'Join MeetAgain'}</Text>
               </LinearGradient>
             </Pressable>
           </ScrollView>

@@ -31,15 +31,22 @@ function fixture(status = 'pending', counts = [2, 4]) {
       writes.forEach((write) => write());
     },
   };
-  const source = fs.readFileSync(path.join(__dirname, '../../src/features/friends/friendships.ts'), 'utf8');
-  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-  const context = { exports: {}, require: (name) => {
+  const loadService = (file, exposeAccountHelper = false) => {
+    const context = { exports: {}, require: (name) => {
     if (name === 'firebase/firestore') return sdk;
-    if (name === '@/config/firebase') return { db: {} };
+    if (name === 'firebase/auth') return { deleteUser: async () => {}, getIdTokenResult: async () => ({ claims: {} }) };
+    if (name === '@/config/firebase') return { db: {}, auth: { currentUser: null } };
     throw new Error(`Unexpected dependency: ${name}`);
-  } };
-  vm.runInNewContext(compiled, context);
-  return { service: context.exports, pair, store };
+    } };
+    const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    let compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+    if (exposeAccountHelper) compiled += '\nexports.__testRemoveAccountFriendship = removeAccountFriendship;';
+    vm.runInNewContext(compiled, context);
+    return context.exports;
+  };
+  const service = loadService('../../src/features/friends/friendships.ts');
+  const deletionService = loadService('../../src/features/profile/deleteAccount.ts', true);
+  return { service, removeAccountFriendship: deletionService.__testRemoveAccountFriendship, pair, store };
 }
 
 test('accept updates both totals once and rejects a stale repeat', async () => {
@@ -66,6 +73,17 @@ test('unfriend updates both totals and cannot be repeated', async () => {
   assert.equal(store.get('friendCounts/bob').count, 0);
   assert.equal(store.has('friendships/alice_bob'), false);
   await assert.rejects(service.removeFriendship(pair, 'alice'), /no longer exists/);
+});
+
+test('account deletion removes every pair status and only decrements accepted counts', async () => {
+  for (const status of ['pending', 'declined', 'accepted']) {
+    const { removeAccountFriendship, store } = fixture(status, [2, 4]);
+    await removeAccountFriendship('alice_bob', 'alice');
+    assert.equal(store.has('friendships/alice_bob'), false);
+    assert.equal(store.get('friendCounts/alice').count, status === 'accepted' ? 1 : 2);
+    assert.equal(store.get('friendCounts/bob').count, status === 'accepted' ? 3 : 4);
+    await removeAccountFriendship('alice_bob', 'alice');
+  }
 });
 
 test('missing baseline and unauthorized actions leave all records unchanged', async () => {

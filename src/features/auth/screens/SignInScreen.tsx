@@ -17,7 +17,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Logo } from '@/components/Logo';
 import { auth } from '@/config/firebase';
-import { useAuth } from '@/features/auth/AuthContext';
 import { AuthStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, sizes, spacing, text } from '@/theme';
 
@@ -25,7 +24,6 @@ type AuthNavigation = NativeStackNavigationProp<AuthStackParamList>;
 
 export function SignInScreen() {
   const navigation = useNavigation<AuthNavigation>();
-  const { profilePending } = useAuth();
   const passwordInput = useRef<TextInput>(null);
   const busyRef = useRef(false);
   const [email, setEmail] = useState('');
@@ -37,10 +35,6 @@ export function SignInScreen() {
     navigation.setOptions({ gestureEnabled: !busy });
   }, [navigation, busy]);
 
-  useEffect(() => {
-    // An authenticated account without a saved profile must finish setup before entering the app.
-    if (profilePending) navigation.navigate('CreateProfile');
-  }, [navigation, profilePending]);
 
   const onSignIn = async () => {
     // Guard rapid taps before the pending state reaches the button.

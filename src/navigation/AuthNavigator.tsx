@@ -13,22 +13,24 @@ const Stack = createNativeStackNavigator<AuthStackParamList>();
 export function AuthNavigator() {
   const { profilePending } = useAuth();
 
-  // Resume incomplete account setup at its profile step after auth state is restored.
-  // initialRouteName is read once per mount, so the key remounts the stack when the
-  // flag flips. Google sign-in reaches this state without navigating anywhere, and
-  // without the remount it leaves the user sitting on Register.
   return (
     <Stack.Navigator
-      key={profilePending ? 'profile-pending' : 'signed-out'}
-      initialRouteName={profilePending ? 'CreateProfile' : 'Register'}
       screenOptions={{ headerShown: false }}
     >
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen name="Password" component={PasswordScreen} />
-      <Stack.Screen name="CreateProfile" component={CreateProfileScreen} />
-      <Stack.Screen name="SignIn" component={SignInScreen} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+      {profilePending ? (
+        // Removing signed-out routes forces the router to show setup even when
+        // Google returns to an already-mounted Register or SignIn stack.
+        <Stack.Screen name="CreateProfile" component={CreateProfileScreen} navigationKey="pending-profile" />
+      ) : (
+        <>
+          <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="Password" component={PasswordScreen} />
+          <Stack.Screen name="CreateProfile" component={CreateProfileScreen} navigationKey="email-signup" />
+          <Stack.Screen name="SignIn" component={SignInScreen} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+        </>
+      )}
     </Stack.Navigator>
   );
 }
