@@ -35,6 +35,7 @@ export type MessagesStackParamList = {
     title: string;
     memberIds: string[];
     groupId?: string;
+    // TODO: Add a direct conversation ID for friend routes; derive it from the canonical friendshipId pair.
   };
 };
 

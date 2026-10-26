@@ -50,6 +50,9 @@ export function MessageFeedScreen() {
   }, [user?.uid, groupsRetry]);
 
   const entries = useMemo<Entry[]>(() => {
+    // TODO: Subscribe to durable direct conversations and merge them into feed entries.
+    // Keep conversations visible after a friendship is removed; only accepted friends
+    // should be offered as new conversations, while former friends retain history.
     if (!user || friendsUid !== user.uid) return [];
     const term = query.trim().toLocaleLowerCase();
     const matchingGroups = groups.filter((group) => !term || group.name.toLocaleLowerCase().includes(term));
@@ -58,6 +61,7 @@ export function MessageFeedScreen() {
   }, [friends, friendsUid, groups, query, user]);
 
   const openEntry = (entry: Entry) => {
+    // TODO: Open a direct entry with its canonical friendshipId as conversation ID.
     if (entry.type === 'group') {
       navigation.navigate('Conversation', { kind: 'group', title: entry.value.name, memberIds: entry.value.memberIds, groupId: entry.value.id });
     } else {

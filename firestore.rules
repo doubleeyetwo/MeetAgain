@@ -293,6 +293,13 @@ service cloud.firestore {
           )
         );
     }
+    // TODO(direct messaging): Add rules before this group section for
+    // friendshipId-keyed conversations and message subcollections. Permit a
+    // missing conversation get narrowly only when its requested ID is the
+    // caller's canonical pair ID, then allow creation only for accepted pairs.
+    // Keep existing member/history reads valid after unfriend; keep members
+    // immutable and validate each message's sender. Check friendship existence
+    // before reading .data so a missing friendship cannot be dereferenced.
     // A canonical member-set claim gives every exact set one stable random group ID.
     // The creator is the first administrator; membership changes are not supported.
     match /groups/{groupId} {

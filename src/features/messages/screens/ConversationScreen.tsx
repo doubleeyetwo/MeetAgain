@@ -52,6 +52,9 @@ export function ConversationScreen({ navigation, route }: Props) {
   }, [kind, memberIds.join('|'), user?.uid]);
 
   useEffect(() => {
+    // TODO: For friend routes, subscribe to watchDirectMessages using the canonical
+    // conversation ID and watchDirectFriendship for live send eligibility. Do not
+    // remove history when friendship ends; disable sending unless it is accepted.
     setMessages([]);
     setMessagesError(null);
     setMessagesLoading(false);
@@ -94,6 +97,8 @@ export function ConversationScreen({ navigation, route }: Props) {
       return;
     }
 
+    // TODO: For friend routes, call sendDirectMessage only while friendship status
+    // is accepted; preserve the draft and show service errors as the group path does.
     if (kind !== 'group' || !groupId) {
       setSendError('Sending to friends is not available yet.');
       return;
@@ -206,6 +211,8 @@ export function ConversationScreen({ navigation, route }: Props) {
           </Text>
         ) : null}
         {/* Keep the composer below the message area and error display. */}
+        {/* TODO: For friend routes, disable sending during initial friendship
+            loading, subscription errors, and whenever friendship is no longer accepted. */}
         <View style={styles.composer}>
           <TextInput
             style={styles.messageInput}
