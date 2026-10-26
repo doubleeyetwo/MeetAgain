@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { EventTemplatesScreen } from '@/features/events/screens/EventTemplatesScreen';
 import { CreateEventScreen } from '@/features/events/screens/CreateEventScreen';
+import { PickLocationScreen } from '@/features/events/screens/PickLocationScreen';
 import { ReviewEventScreen } from '@/features/events/screens/ReviewEventScreen';
 
 export type EventCreationStackParamList = {
@@ -13,10 +14,18 @@ export type EventCreationStackParamList = {
     category?: string;
   } | undefined;
 
+  PickLocation: {
+    eventName: string;
+    category: string;
+    presetId?: string;
+    location?: string;
+  };
+
   ReviewEvent: {
     eventName: string;
     category: string;
     presetId?: string;
+    location?: string;
   };
 };
 
@@ -39,6 +48,11 @@ export function EventCreationNavigator() {
       <Stack.Screen
         name="EventDetails"
         component={CreateEventScreen}
+      />
+
+      <Stack.Screen
+        name="PickLocation"
+        component={PickLocationScreen}
       />
 
       <Stack.Screen
