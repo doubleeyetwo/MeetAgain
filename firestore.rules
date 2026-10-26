@@ -420,6 +420,57 @@ service cloud.firestore {
       allow update: if validCounter()
         && request.resource.data.latestNumber == resource.data.latestNumber + 1;
     }
+    match /events/{eventId} {
+      function signedIn() {
+        return request.auth != null;
+      }
+      function isParticipant() {
+        return signedIn() && request.auth.uid in resource.data.participantIds;
+      }
+      function validParticipants(event) {
+        return event.participantIds is list
+          && event.participantIds.size() >= 1
+          && event.participantIds.size() <= 10
+          && request.auth.uid in event.participantIds
+          && event.participantIds.toSet().size() == event.participantIds.size();
+      }
+      function validGroup(event) {
+        return (event.get('groupId', null) == null
+          && event.participantIds == [request.auth.uid])
+          || (event.get('groupId', null) is string
+            && exists(/databases/$(database)/documents/groups/$(event.groupId))
+            && event.participantIds == get(/databases/$(database)/documents/groups/$(event.groupId)).data.memberIds);
+      }
+      function validEvent() {
+        let event = request.resource.data;
+        return event.keys().hasAll([
+          'creatorId', 'title', 'startAt', 'endAt', 'participantIds',
+          'status', 'createdAt', 'updatedAt'
+        ])
+          && event.keys().hasOnly([
+            'creatorId', 'title', 'description', 'location', 'startAt',
+            'endAt', 'participantIds', 'status', 'createdAt', 'updatedAt',
+            'category', 'groupId', 'photoURL', 'items', 'tasks', 'rsvps',
+            'reminderMinutesBefore'
+          ])
+          && event.creatorId == request.auth.uid
+          && event.title is string
+          && event.title.size() > 0
+          && event.title.size() <= 150
+          && event.startAt is timestamp
+          && event.endAt is timestamp
+          && event.endAt > event.startAt
+          && validParticipants(event)
+          && validGroup(event)
+          && event.status in ['draft', 'polling', 'confirmed', 'cancelled']
+          && event.createdAt == request.time
+          && event.updatedAt == request.time;
+      }
+      allow get, list: if isParticipant();
+      allow create: if signedIn() && validEvent();
+      // Editing and RSVP updates will be implemented separately.
+      allow update, delete: if false;
+    }
     match /{document=**} {
       allow read, write: if false;
     }
