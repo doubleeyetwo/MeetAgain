@@ -49,7 +49,7 @@ export function CreateEventScreen({
       : category;
 
   const handleConfirmDetails = () => {
-    navigation.navigate('ReviewEvent', {
+    navigation.navigate('PickLocation', {
       eventName: eventName.trim(),
       category: resolvedCategory,
       presetId: route.params?.presetId,

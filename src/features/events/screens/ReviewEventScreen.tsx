@@ -49,7 +49,7 @@ export function ReviewEventScreen({
   navigation,
   route,
 }: Props) {
-  const { eventName, category } = route.params;
+  const { eventName, category, location } = route.params;
 
   const [description, setDescription] = useState('');
   const [reminder, setReminder] = useState('24 hours before');
@@ -223,7 +223,7 @@ export function ReviewEventScreen({
                 color={colors.white}
               />
               <Text style={styles.eventInfoText}>
-                Location not selected
+                {location || 'Location not selected'}
               </Text>
             </View>
 
