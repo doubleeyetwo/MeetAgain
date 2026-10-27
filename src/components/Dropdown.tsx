@@ -7,6 +7,7 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type PressableInstance,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -54,7 +55,7 @@ export function Dropdown<T extends string | number>({
   invalid = false,
   style,
 }: DropdownProps<T>) {
-  const fieldRef = useRef<View>(null);
+  const fieldRef = useRef<PressableInstance>(null);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const { width: windowWidth, height: windowHeight } =
     useWindowDimensions();

@@ -1,5 +1,6 @@
 import type { GroupMessage } from './messages';
 import { MAX_MESSAGE_LENGTH } from './messages';
+import { PROFILE_PHOTO_MAX_DATA_URL_LENGTH } from '@/features/auth/profilePhoto';
 import {
   onSnapshot,
   query,
@@ -17,17 +18,22 @@ export async function sendDirectMessage(
   conversationId: string,
   senderId: string,
   text: string,
+  imageDataUrl?: string,
 ): Promise<void> {
   // Trim whitespace from the beginning and end of the text.
   const trimmedText = text.trim();
   
-  // Message validation
-  if (trimmedText.length === 0) {
+  // Photos may have no caption; text-only messages must still contain text.
+  if (trimmedText.length === 0 && !imageDataUrl) {
     throw new Error('Write a message before sending.')
   }
 
   if (trimmedText.length > MAX_MESSAGE_LENGTH) {
     throw new Error(`Messages must be ${MAX_MESSAGE_LENGTH} characters or fewer.`);
+  }
+
+  if (imageDataUrl && (imageDataUrl.length > PROFILE_PHOTO_MAX_DATA_URL_LENGTH || !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl))) {
+    throw new Error('Choose a smaller JPEG photo.');
   }
 
   // Reference directConversations/{conversationId}/messages using collection().
@@ -51,11 +57,11 @@ export async function sendDirectMessage(
     throw new Error('You are no longer friends with this user.');
   }
 
-  // TODO: Firestore rules must also enforce the authenticated sender and friendship membership;
-  // this client-side check alone is not a security boundary.
+  // Rules repeat the sender and friendship checks when the write commits.
   await addDoc(messagesRef, {
     senderId: senderId,
     text: trimmedText,
+    ...(imageDataUrl ? { imageDataUrl } : {}),
     createdAt: serverTimestamp(),
   });
 }

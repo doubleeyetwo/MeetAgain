@@ -47,7 +47,7 @@ export function ConversationScreen({ navigation, route }: Props) {
   const sendLock = useRef(false);
   const pickLock = useRef(false);
   const active = useRef(true);
-  const conversationKey = `${kind}:${groupId ?? ''}:${user?.uid ?? ''}`;
+  const conversationKey = `${kind}:${groupId ?? directConversationId ?? ''}:${user?.uid ?? ''}`;
   const currentConversation = useRef(conversationKey);
   currentConversation.current = conversationKey;
   const [messages, setMessages] = useState<GroupMessage[]>([]);
@@ -180,6 +180,26 @@ export function ConversationScreen({ navigation, route }: Props) {
     };
   }, [kind, user?.uid, otherUid]);
 
+  async function handlePickPhoto() {
+    if (composerDisabled || pickLock.current || sendLock.current) return;
+    pickLock.current = true;
+    const startedIn = currentConversation.current;
+    setMenuOpen(false);
+    setPicking(true);
+    setSendError(null);
+    try {
+      const result = await pickChatPhotoFromLibrary();
+      // Do not attach a late picker result to a different conversation.
+      if (active.current && currentConversation.current === startedIn) {
+        if (result.error) setSendError(result.error);
+        else if (result.photo) setAttachment({ uri: result.photo.uri, dataUrl: result.photo.dataUrl });
+      }
+    } finally {
+      pickLock.current = false;
+      if (active.current) setPicking(false);
+    }
+  }
+
   async function handleSend() {
     // Ignore another send while the current write is pending.
     if (sendLock.current || pickLock.current) return;
@@ -213,13 +233,14 @@ export function ConversationScreen({ navigation, route }: Props) {
           throw new Error('The direct conversation could not be found.');
         }
 
-        await sendDirectMessage(directConversationId, user.uid, draft);
+        await sendDirectMessage(directConversationId, user.uid, draft, attachment?.dataUrl);
       } else {
         if (!groupId) {
           throw new Error('The group could not be found.');
         }
 
-        await sendGroupMessage(groupId, user.uid, draft);
+        if (attachment) await sendGroupPhoto(groupId, user.uid, attachment.dataUrl, draft);
+        else await sendGroupMessage(groupId, user.uid, draft);
       }
 
       // Clear the draft only after the write succeeds.
@@ -328,14 +349,16 @@ export function ConversationScreen({ navigation, route }: Props) {
             {sendError}
           </Text>
         ) : null}
-        {kind === 'group' && menuOpen ? (
+        {menuOpen ? (
           <View style={styles.attachmentMenu}>
-            <View style={[styles.menuRow, styles.menuRowDisabled]} accessibilityState={{ disabled: true }}>
-              <Ionicons name="bar-chart-outline" size={22} color={colors.white} />
-              <Text style={styles.menuText}>Create a Poll</Text>
-              <Text style={styles.menuHint}>Coming soon</Text>
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Upload photo" onPress={() => { void handlePickPhoto(); }} style={styles.menuRow}>
+            {kind === 'group' ? (
+              <View style={[styles.menuRow, styles.menuRowDisabled]} accessibilityState={{ disabled: true }}>
+                <Ionicons name="bar-chart-outline" size={22} color={colors.white} />
+                <Text style={styles.menuText}>Create a Poll</Text>
+                <Text style={styles.menuHint}>Coming soon</Text>
+              </View>
+            ) : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="Upload photo" onPress={() => { void handlePickPhoto(); }} disabled={composerDisabled || picking} style={styles.menuRow}>
               <Ionicons name="camera-outline" size={22} color={colors.white} />
               <Text style={styles.menuText}>Upload Photo</Text>
             </Pressable>
@@ -345,7 +368,7 @@ export function ConversationScreen({ navigation, route }: Props) {
           <View style={styles.attachmentPreview}>
             <Image source={{ uri: attachment.uri }} style={styles.previewImage} />
             <Text style={styles.previewLabel} numberOfLines={1}>Photo ready to send</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Remove attachment" onPress={() => setAttachment(null)} disabled={sending} hitSlop={10}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Remove attachment" onPress={() => setAttachment(null)} disabled={composerDisabled || picking} hitSlop={10}>
               <Ionicons name="close-circle" size={24} color={colors.white} />
             </Pressable>
           </View>
@@ -364,11 +387,9 @@ export function ConversationScreen({ navigation, route }: Props) {
           </Text>
         ) : null}
         <View style={styles.composer}>
-          {kind === 'group' ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={menuOpen ? 'Close attachment menu' : 'Add attachment'} onPress={() => setMenuOpen(!menuOpen)} disabled={sending || picking} style={styles.addButton}>
-              <Ionicons name={menuOpen ? 'close' : 'add'} size={25} color={colors.white} />
-            </Pressable>
-          ) : null}
+          <Pressable accessibilityRole="button" accessibilityLabel={menuOpen ? 'Close attachment menu' : 'Add attachment'} onPress={() => setMenuOpen(!menuOpen)} disabled={composerDisabled || picking} style={styles.addButton}>
+            <Ionicons name={menuOpen ? 'close' : 'add'} size={25} color={colors.white} />
+          </Pressable>
           <TextInput
             style={styles.messageInput}
             value={draft}

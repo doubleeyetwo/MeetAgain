@@ -365,12 +365,19 @@ service cloud.firestore {
         function validMessage() {
           let message = request.resource.data;
           return message.keys().hasAll(['senderId', 'text', 'createdAt'])
-            && message.keys().hasOnly(['senderId', 'text', 'createdAt'])
+            && message.keys().hasOnly(['senderId', 'text', 'imageDataUrl', 'createdAt'])
             && message.senderId == request.auth.uid
             && message.text is string
-            && message.text.size() > 0
             && message.text.size() <= 2000
-            && message.text.matches('[\\s\\S]*\\S[\\s\\S]*')
+            && (
+              (message.text.size() > 0 && message.text.matches('[\\s\\S]*\\S[\\s\\S]*'))
+              || message.keys().hasAny(['imageDataUrl'])
+            )
+            && (!message.keys().hasAny(['imageDataUrl']) || (
+              message.imageDataUrl is string
+              && message.imageDataUrl.size() <= 200023
+              && message.imageDataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+            ))
             && message.createdAt == request.time;
         }
 
