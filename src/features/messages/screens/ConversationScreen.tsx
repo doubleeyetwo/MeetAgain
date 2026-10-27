@@ -16,12 +16,22 @@ import {
   watchGroupMessages,
   type GroupMessage,
 } from '../messages';
+import { sendDirectMessage, watchDirectMessages } from '../directMessages';
+import {
+  watchDirectFriendship,
+} from '@/features/messages/directConversations';
+
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'Conversation'>;
 
 export function ConversationScreen({ navigation, route }: Props) {
   const { user } = useAuth();
-  const { kind, title, memberIds, groupId } = route.params;
+  const { kind, title, memberIds } = route.params;
+  // Check whether we have a group chat for direct message
+  const groupId = route.params.kind === 'group' ? route.params.groupId : undefined;
+  const directConversationId = route.params.kind === 'friend' ? route.params.directConversationId : undefined;
+  // Find the participant whose UID differs from the signed-in user's
+  const otherUid = memberIds.find((uid) => uid !== user?.uid);
   const [profiles, setProfiles] = useState<Record<string, PublicProfile>>({});
   const [loading, setLoading] = useState(kind === 'group');
   const [sendError, setSendError] = useState<string | null>(null);
@@ -30,6 +40,17 @@ export function ConversationScreen({ navigation, route }: Props) {
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [friendshipAccepted, setFriendshipAccepted] = useState(false);
+  const [friendshipLoading, setFriendshipLoading] = useState(true);
+  const [friendshipError, setFriendshipError] = useState<string | null>(null);
+
+  // Block direct-message composition until friendship is confirmed without errors.
+  const directComposerDisabled =
+    kind === 'friend' &&
+    (friendshipLoading || friendshipError !== null || !friendshipAccepted);
+
+  // Also block composition while signed out or while a message write is pending.
+  const composerDisabled = !user || sending || directComposerDisabled;
 
   useEffect(() => {
     let active = true;
@@ -52,21 +73,33 @@ export function ConversationScreen({ navigation, route }: Props) {
   }, [kind, memberIds.join('|'), user?.uid]);
 
   useEffect(() => {
-    // TODO: For friend routes, subscribe to watchDirectMessages using the canonical
-    // conversation ID and watchDirectFriendship for live send eligibility. Do not
-    // remove history when friendship ends; disable sending unless it is accepted.
     setMessages([]);
     setMessagesError(null);
     setMessagesLoading(false);
 
-    if (!user || kind !== 'group' || !groupId) return;
+    // Check if user
+    if (!user) return;
+
+    // Select the conversation ID and listener based on the route kind.
+    let conversationId: string;
+    let watchMessages: typeof watchGroupMessages;
+
+    if (kind === 'friend') {
+      if (!directConversationId) return;
+      conversationId = directConversationId;
+      watchMessages = watchDirectMessages;
+    } else {
+      if (!groupId) return;
+      conversationId = groupId;
+      watchMessages = watchGroupMessages;
+    }
 
     setMessagesLoading(true);
 
     let active = true;
 
-    const unsubscribe = watchGroupMessages(
-      groupId,
+    const unsubscribe = watchMessages(
+      conversationId,
       (nextMessages) => {
         if (!active) return;
         setMessages(nextMessages);
@@ -84,7 +117,42 @@ export function ConversationScreen({ navigation, route }: Props) {
       active = false;
       unsubscribe();
     };
-  }, [groupId, kind, user?.uid]);
+  }, [groupId, directConversationId, kind, user?.uid]);
+
+  useEffect(() => {
+    setFriendshipAccepted(false);
+    setFriendshipLoading(true);
+    setFriendshipError(null);
+
+    if (kind !== 'friend' || !user || !otherUid) {
+      setFriendshipLoading(false);
+      return;
+    }
+
+    let active = true;
+
+    const unsubscribe = watchDirectFriendship(
+      user.uid,
+      otherUid,
+      (accepted) => {
+        if (!active) return;
+        // Store acceptance and finish loading
+        setFriendshipAccepted(accepted);
+        setFriendshipLoading(false);
+      },
+      (error) => {
+        if (!active) return;
+        setFriendshipAccepted(false);
+        setFriendshipError(error.message);
+        setFriendshipLoading(false);
+      },
+    );
+    // Stop this listener and ignore late callbacks when the pair changes.
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [kind, user?.uid, otherUid]);
 
   async function handleSend() {
     // Ignore another send while the current write is pending.
@@ -97,18 +165,34 @@ export function ConversationScreen({ navigation, route }: Props) {
       return;
     }
 
-    // TODO: For friend routes, call sendDirectMessage only while friendship status
-    // is accepted; preserve the draft and show service errors as the group path does.
-    if (kind !== 'group' || !groupId) {
-      setSendError('Sending to friends is not available yet.');
+    if (directComposerDisabled) {
+      setSendError(
+        friendshipLoading
+          ? 'Checking friendship status...'
+          : friendshipError !== null
+            ? 'Could not verify friendship. Please reopen the conversation.'
+            : 'You must be friends to send messages.',
+      );
       return;
     }
 
     setSending(true);
 
     try {
-      // Await sendGroupMessage using groupId, user.uid, and draft.
-      await sendGroupMessage(groupId, user.uid, draft);
+      // Select the sending service while sharing draft and error handling.
+      if (kind === 'friend') {
+        if (!directConversationId) {
+          throw new Error('The direct conversation could not be found.');
+        }
+
+        await sendDirectMessage(directConversationId, user.uid, draft);
+      } else {
+        if (!groupId) {
+          throw new Error('The group could not be found.');
+        }
+
+        await sendGroupMessage(groupId, user.uid, draft);
+      }
 
       // Clear the draft only after the write succeeds.
       setDraft('');
@@ -167,9 +251,7 @@ export function ConversationScreen({ navigation, route }: Props) {
             <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
               {messages.length === 0 ? (
                 <Text style={styles.emptyText}>
-                  {kind === 'group'
-                    ? 'No messages yet. Start the conversation!'
-                    : 'Friend messaging is not available yet.'}
+                  No messages yet. Start the conversation!
                 </Text>
               ) : null}
 
@@ -210,9 +292,19 @@ export function ConversationScreen({ navigation, route }: Props) {
             {sendError}
           </Text>
         ) : null}
-        {/* Keep the composer below the message area and error display. */}
-        {/* TODO: For friend routes, disable sending during initial friendship
-            loading, subscription errors, and whenever friendship is no longer accepted. */}
+        {/* Explain direct-message restrictions while keeping history visible. */}
+        {kind === 'friend' && directComposerDisabled ? (
+          <Text
+            accessibilityRole="alert"
+            style={friendshipError !== null ? styles.errorText : styles.stateText}
+          >
+            {friendshipLoading
+              ? 'Checking friendship status...'
+              : friendshipError !== null
+                ? 'Could not verify friendship. Please reopen the conversation.'
+                : 'You must be friends to send messages.'}
+          </Text>
+        ) : null}
         <View style={styles.composer}>
           <TextInput
             style={styles.messageInput}
@@ -221,17 +313,17 @@ export function ConversationScreen({ navigation, route }: Props) {
             placeholder="Message..."
             placeholderTextColor="rgba(244,241,247,0.65)"
             accessibilityLabel="Message"
-            editable={!sending}
+            editable={!composerDisabled}
           />
 
           <Pressable
             style={[
               styles.sendButton,
-              (sending || !draft.trim()) && styles.sendButtonDisabled,
+              (composerDisabled || !draft.trim()) && styles.sendButtonDisabled,
             ]}
             accessibilityRole="button"
             accessibilityLabel="Send message"
-            disabled={sending || !draft.trim()}
+            disabled={composerDisabled || !draft.trim()}
             onPress={handleSend}
           >
             {sending ? (
@@ -261,6 +353,8 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingBottom: 48 },
   emptyIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.cardDarker, alignItems: 'center', justifyContent: 'center' },
   emptyText: { ...text.body, color: 'rgba(244,241,247,0.8)', fontSize: 16 },
+  stateText: { ...text.body, color: colors.white, textAlign: 'center', lineHeight: 21, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  errorText: { ...text.body, color: '#ffb7b7', paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, textAlign: 'center' },
   composer: {
     // A row places the input and send button beside each other.
     flexDirection: 'row',

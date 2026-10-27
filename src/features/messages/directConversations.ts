@@ -1,10 +1,13 @@
 import {
+  collection,
   doc,
   getDoc,
   onSnapshot,
   runTransaction,
   serverTimestamp,
   Timestamp,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { friendshipId } from '@/features/friends/friendships';
@@ -60,8 +63,17 @@ export async function getOrCreateDirectConversation(
       throw new Error('You are no longer friends with this user.');
     }
     const friendshipData = friendship.data();
+    // Compare the friendship's participants against this conversation's expected pair.
+    const expectedMembers = [uidA, uidB].sort();
+    const storedMembers = friendshipData.memberIds;
     if (
-      !friendshipData || friendshipData.status !== 'accepted') {
+      !friendshipData ||
+      friendshipData.status !== 'accepted' ||
+      !Array.isArray(storedMembers) ||
+      storedMembers.length !== 2 ||
+      storedMembers[0] !== expectedMembers[0] ||
+      storedMembers[1] !== expectedMembers[1]
+    ) {
       throw new Error('You are no longer friends with this user.');
     }
 
@@ -93,12 +105,25 @@ export function watchDirectConversations(
   onChange: (conversations: DirectConversation[]) => void,
   onError: (error: Error) => void,
 ): () => void {
-  // TODO: Query conversations where memberIds array-contains uid with onSnapshot;
-  // forward mapped documents and errors, and return Firestore's unsubscribe.
-  void uid;
-  void onChange;
-  void onError;
-  throw new Error('watchDirectConversations is not implemented yet.');
+  // Find every conversation containing this user, including past friendships.
+  const conversationsQuery = query(
+    collection(db, 'directConversations'),
+    where('memberIds', 'array-contains', uid),
+  );
+
+  // Listen for changes and return the cleanup function for the calling screen.
+  return onSnapshot(
+    conversationsQuery,
+    (snapshot) => {
+      // Include each document's ID so the screen can open its conversation.
+      const conversations = snapshot.docs.map((conversationDoc) => ({
+        ...conversationDoc.data(),
+        id: conversationDoc.id,
+      } as DirectConversation));
+      onChange(conversations);
+    },
+    onError,
+  );
 }
 
 /** Observe the canonical pair friendship to determine whether sending is allowed. */
