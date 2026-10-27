@@ -293,6 +293,92 @@ service cloud.firestore {
           )
         );
     }
+    match /directConversations/{conversationId} {
+      // UIDs use the same alphabet and ordering as friendshipId() in the client.
+      // That makes the document ID a unique, unambiguous key for this pair.
+      function validPair(members) {
+        return members is list
+          && members.size() == 2
+          && members[0] is string && members[1] is string
+          && members[0].matches('^[A-Za-z0-9]{1,128}$')
+          && members[1].matches('^[A-Za-z0-9]{1,128}$')
+          && members[0] < members[1]
+          && conversationId == members[0] + '_' + members[1];
+      }
+
+      function callerClaimsCanonicalPair() {
+        let members = conversationId.split('_');
+        return conversationId.matches('^[A-Za-z0-9]{1,128}_[A-Za-z0-9]{1,128}$')
+          && members.size() == 2
+          && members[0] < members[1]
+          && request.auth.uid in members;
+      }
+
+      function acceptedPair(members) {
+        let pairPath = /databases/$(database)/documents/friendships/$(conversationId);
+        // Check existence first: a removed friendship must not authorize creation.
+        return existsAfter(pairPath)
+          && getAfter(pairPath).data.status == 'accepted'
+          && getAfter(pairPath).data.memberIds == members;
+      }
+
+      // The transaction reads the conversation before creating it. Only a
+      // participant may probe a missing canonical pair; existing history is
+      // readable by stored participants even after the friendship is removed.
+      allow get: if request.auth != null
+        && ((resource == null && callerClaimsCanonicalPair())
+          || (resource != null && request.auth.uid in resource.data.memberIds));
+      allow list: if request.auth != null
+        && request.auth.uid in resource.data.memberIds;
+
+      // The pair and creation time are fixed forever. A friendship must be
+      // accepted at commit time, including when writes are combined in a batch.
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['memberIds', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['memberIds', 'createdAt'])
+        && validPair(request.resource.data.memberIds)
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.createdAt == request.time
+        && acceptedPair(request.resource.data.memberIds);
+      allow update, delete: if false;
+
+      match /messages/{messageId} {
+        function conversationPath() {
+          return /databases/$(database)/documents/directConversations/$(conversationId);
+        }
+
+        function isParticipant() {
+          return request.auth != null
+            && exists(conversationPath())
+            && request.auth.uid in get(conversationPath()).data.memberIds;
+        }
+
+        function canSend() {
+          let pairPath = /databases/$(database)/documents/friendships/$(conversationId);
+          // History remains readable after unfriend, but every new send needs
+          // the same accepted pair stored on the conversation.
+          return existsAfter(pairPath)
+            && getAfter(pairPath).data.status == 'accepted'
+            && getAfter(pairPath).data.memberIds == get(conversationPath()).data.memberIds;
+        }
+
+        function validMessage() {
+          let message = request.resource.data;
+          return message.keys().hasAll(['senderId', 'text', 'createdAt'])
+            && message.keys().hasOnly(['senderId', 'text', 'createdAt'])
+            && message.senderId == request.auth.uid
+            && message.text is string
+            && message.text.size() > 0
+            && message.text.size() <= 2000
+            && message.text.matches('[\\s\\S]*\\S[\\s\\S]*')
+            && message.createdAt == request.time;
+        }
+
+        allow get, list: if isParticipant();
+        allow create: if isParticipant() && canSend() && validMessage();
+        allow update, delete: if false;
+      }
+    }
     // A canonical member-set claim gives every exact set one stable random group ID.
     // The creator is the first administrator; membership changes are not supported.
     match /groups/{groupId} {
