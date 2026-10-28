@@ -42,14 +42,33 @@ const EVENT_CATEGORIES = [
 ];
 
 export function CreateEventScreen({ navigation, route }: Props) {
-  const [eventName, setEventName] = useState('');
-  const [category, setCategory] = useState(
-    route.params?.category ?? ''
-  );
-  const [customCategory, setCustomCategory] = useState('');
+  const [eventName, setEventName] = useState(
+  route.params?.eventName ?? ''
+);
+  const [category, setCategory] = useState(() => {
+  const initialCategory = route.params?.category ?? '';
+
+  if (
+    initialCategory &&
+    !EVENT_CATEGORIES.includes(initialCategory)
+  ) {
+    return 'Other';
+  }
+
+  return initialCategory;
+});
+
+  const [customCategory, setCustomCategory] = useState(
+  route.params?.category &&
+    !EVENT_CATEGORIES.includes(route.params.category)
+    ? route.params.category
+    : ''
+);
   const [showCategories, setShowCategories] = useState(false);
 
-  const [eventPhoto, setEventPhoto] = useState<string | null>(null);
+  const [eventPhoto, setEventPhoto] = useState<string | null>(
+  route.params?.eventPhoto ?? null
+);
   const [photoLoading, setPhotoLoading] = useState(false);
 
   const resolvedCategory =
@@ -125,13 +144,41 @@ export function CreateEventScreen({ navigation, route }: Props) {
   };
 
   const handleConfirmDetails = () => {
-    navigation.navigate('PickLocation', {
-      eventName: eventName.trim(),
-      category: resolvedCategory,
-      presetId: route.params?.presetId,
-      eventPhoto,
-    });
+  const updatedDetails = {
+    eventName: eventName.trim(),
+    category: resolvedCategory,
+    presetId: route.params?.presetId,
+    eventPhoto,
   };
+
+  if (route.params?.editingFromReview) {
+    if (
+      !route.params.startAt ||
+      !route.params.endAt
+    ) {
+      Alert.alert('Error', 'Event date and time are missing.');
+      return;
+    }
+
+    navigation.navigate({
+      name: 'ReviewEvent',
+      params: {
+        ...route.params,
+        ...updatedDetails,
+        startAt: route.params.startAt,
+        endAt: route.params.endAt,
+        selectedMemberIds:
+          route.params.selectedMemberIds ?? [],
+      },
+      merge: true,
+      pop: true,
+    });
+
+    return;
+  }
+
+  navigation.navigate('PickLocation', updatedDetails);
+};
 
   return (
     <KeyboardAvoidingView
@@ -202,7 +249,6 @@ export function CreateEventScreen({ navigation, route }: Props) {
                 style={styles.dropdown}
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="always"
-                showsVerticalScrollIndicator={false}
               >
                 {EVENT_CATEGORIES.map((item) => (
                   <Pressable

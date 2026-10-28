@@ -99,6 +99,7 @@ useEffect(() => {
             startAt: data.startAt.toDate(),
             endAt: data.endAt.toDate(),
             location: data.location,
+            photoURL: data.photoURL,
           };
         })
       );
@@ -442,6 +443,7 @@ useEffect(() => {
                 <EventChatCard
                   key={event.id}
                   title={event.title}
+                  photoURL={event.photoURL}
                   date={event.startAt.toLocaleDateString()}
                   time={`${event.startAt.toLocaleTimeString([], {
                     hour: 'numeric',
@@ -451,6 +453,7 @@ useEffect(() => {
                     minute: '2-digit',
                   })}`}
                   location={event.location}
+                  
                 />
               ))}
 

@@ -575,41 +575,84 @@ if (groupId) {
         </Text>
 
         <View style={styles.eventInfo}>
-          <View style={styles.eventInfoLeft}>
-            <Text style={styles.eventInfoText}>
-              {category || 'No Category'}
-            </Text>
-            <Text style={styles.eventInfoText}>
-              {formatEventDate(eventTimes)}
-            </Text>
-          </View>
+  <View style={styles.eventInfoLeft}>
+    {/* CATEGORY */}
+    <Pressable
+      onPress={() =>
+        navigation.navigate('EventDetails', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Text style={styles.eventInfoText}>
+        {category || 'No Category'}
+      </Text>
+    </Pressable>
 
-          <View style={styles.infoDivider} />
+    {/* DATE */}
+    <Pressable
+      onPress={() =>
+        navigation.navigate('PickTime', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Text style={styles.eventInfoText}>
+        {formatEventDate(eventTimes)}
+      </Text>
+    </Pressable>
+  </View>
 
-          <View style={styles.eventInfoRight}>
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="location-outline"
-                size={19}
-                color={colors.white}
-              />
-              <Text style={styles.eventInfoText}>
-                {location || 'Location not selected'}
-              </Text>
-            </View>
+  <View style={styles.infoDivider} />
 
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="time-outline"
-                size={19}
-                color={colors.white}
-              />
-              <Text style={styles.eventInfoText}>
-                {formatEventTime(eventTimes)}
-              </Text>
-            </View>
-          </View>
-        </View>
+  <View style={styles.eventInfoRight}>
+    {/* LOCATION */}
+    <Pressable
+      style={styles.infoRow}
+      onPress={() =>
+        navigation.navigate('PickLocation', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Ionicons
+        name="location-outline"
+        size={19}
+        color={colors.white}
+      />
+      <Text style={styles.eventInfoText}>
+        {location || 'Location not selected'}
+      </Text>
+    </Pressable>
+
+    {/* TIME */}
+    <Pressable
+      style={styles.infoRow}
+      onPress={() =>
+        navigation.navigate('PickTime', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Ionicons
+        name="time-outline"
+        size={19}
+        color={colors.white}
+      />
+      <Text style={styles.eventInfoText}>
+        {formatEventTime(eventTimes)}
+      </Text>
+    </Pressable>
+  </View>
+</View>
 
         <View style={styles.descriptionBox}>
           <TextInput
@@ -814,7 +857,7 @@ if (groupId) {
 
         <Pressable
           style={styles.deleteButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.getParent()?.navigate('Home')}
         >
           <Ionicons
             name="trash-outline"

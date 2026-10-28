@@ -1,4 +1,5 @@
-import { NavigatorScreenParams } from '@react-navigation/native';
+import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
 // Route params are deliberately limited to non-secret navigation state; signup credentials stay in AuthContext.
 export type AuthStackParamList = {
@@ -22,7 +23,9 @@ export type ProfileStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Messages: undefined;
-  CreateEvent: undefined;
+  CreateEvent:
+  | NavigatorScreenParams<EventCreationStackParamList>
+  | undefined;
   Calendar: undefined;
   // Allow opening a specific profile screen, or selecting the tab normally.
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;

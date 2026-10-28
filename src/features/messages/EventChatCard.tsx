@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { colors } from '@/theme';
+import { colors, spacing, text } from '@/theme';
 
 type Props = {
   title: string;
@@ -19,7 +19,7 @@ export function EventChatCard({
 }: Props) {
   return (
     <View style={styles.card}>
-      {/* Event Photo */}
+      {/* Event photo */}
       {photoURL ? (
         <Image
           source={{ uri: photoURL }}
@@ -28,20 +28,15 @@ export function EventChatCard({
         />
       ) : null}
 
-      {/* Event Label */}
-      <View style={styles.heading}>
-        <Ionicons
-          name="calendar-outline"
-          size={22}
-          color={colors.white}
-        />
-        <Text style={styles.headingText}>EVENT</Text>
-      </View>
+      {/* Card heading */}
+      <Text style={styles.heading}>Event Details</Text>
 
-      {/* Event Name */}
-      <Text style={styles.title}>{title}</Text>
+      {/* Event title */}
+      <Text style={styles.eventTitle}>{title}</Text>
 
-      {/* Event Date */}
+      <View style={styles.divider} />
+
+      {/* Date */}
       <View style={styles.detail}>
         <Ionicons
           name="calendar-outline"
@@ -51,7 +46,7 @@ export function EventChatCard({
         <Text style={styles.detailText}>{date}</Text>
       </View>
 
-      {/* Event Time */}
+      {/* Time */}
       <View style={styles.detail}>
         <Ionicons
           name="time-outline"
@@ -61,7 +56,7 @@ export function EventChatCard({
         <Text style={styles.detailText}>{time}</Text>
       </View>
 
-      {/* Event Location */}
+      {/* Location */}
       <View style={styles.detail}>
         <Ionicons
           name="location-outline"
@@ -78,47 +73,47 @@ export function EventChatCard({
 
 const styles = StyleSheet.create({
   card: {
+    width: 240,
+    padding: spacing.md,
+    gap: spacing.sm,
+    borderRadius: 12,
     backgroundColor: colors.cardDarker,
-    borderRadius: 16,
-    padding: 18,
-    marginVertical: 12,
-    gap: 12,
   },
 
   eventPhoto: {
     width: '100%',
-    height: 160,
-    borderRadius: 12,
+    height: 140,
+    borderRadius: 8,
   },
 
   heading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    ...text.header,
+    color: colors.white,
+    textAlign: 'center',
   },
 
-  headingText: {
+  eventTitle: {
+    ...text.body,
     color: colors.white,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2,
+    textAlign: 'center',
+    fontWeight: '600',
   },
 
-  title: {
-    color: colors.white,
-    fontSize: 20,
-    fontWeight: '700',
+  divider: {
+    height: 2,
+    backgroundColor: colors.primaryAccent,
   },
 
   detail: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.sm,
+    paddingVertical: 4,
   },
 
   detailText: {
+    ...text.body,
     color: colors.white,
-    fontSize: 14,
     flex: 1,
   },
 });

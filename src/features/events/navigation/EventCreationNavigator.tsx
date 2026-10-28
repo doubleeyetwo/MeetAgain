@@ -8,6 +8,7 @@ import { SelectMembersScreen } from '@/features/events/screens/SelectMembersScre
 import { PickLocationScreen } from '@/features/events/screens/PickLocationScreen';
 import { ReviewEventScreen } from '@/features/events/screens/ReviewEventScreen';
 
+
 export type EventCreationStackParamList = {
   EventTemplates: undefined;
 
@@ -15,8 +16,27 @@ export type EventCreationStackParamList = {
     | {
         presetId?: string;
         category?: string;
+        eventName?: string;
+        eventPhoto?: string | null;
+        location?: string;
+        startAt?: string;
+        endAt?: string;
+        selectedMemberIds?: string[];
+        editingFromReview?: boolean;
       }
     | undefined;
+
+  PickLocation: {
+    eventName: string;
+    category: string;
+    presetId?: string;
+    eventPhoto?: string | null;
+    location?: string;
+    startAt?: string;
+    endAt?: string;
+    selectedMemberIds?: string[];
+    editingFromReview?: boolean;
+  };
 
   PickTime: {
     eventName: string;
@@ -24,6 +44,10 @@ export type EventCreationStackParamList = {
     presetId?: string;
     eventPhoto?: string | null;
     location?: string;
+    startAt?: string;
+    endAt?: string;
+    selectedMemberIds?: string[];
+    editingFromReview?: boolean;
   };
 
   SelectMembers: {
@@ -33,16 +57,6 @@ export type EventCreationStackParamList = {
     eventPhoto?: string | null;
     startAt: string;
     endAt: string;
-    location?: string;
-  };
-
-  PickLocation: {
-    eventName: string;
-    category: string;
-    presetId?: string;
-    eventPhoto?: string | null;
-    startAt?: string;
-    endAt?: string;
     location?: string;
   };
 
