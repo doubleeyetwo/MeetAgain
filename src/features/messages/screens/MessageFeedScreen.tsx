@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,10 +10,26 @@ import { MessagesStackParamList } from '@/navigation/types';
 import { useAcceptedMessageFriends, MessageFriend } from '@/features/messages/useAcceptedMessageFriends';
 import { useAuth } from '@/features/auth/AuthContext';
 import { Group, watchGroups } from '@/features/messages/groups';
+import {
+  getOrCreateDirectConversation,
+  watchDirectConversations,
+  type DirectConversation,
+} from '@/features/messages/directConversations';
 import { FriendAvatar, friendDisplayName, friendSearchText } from '@/features/messages/FriendDisplay';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { collections } from '@/data/firestorePaths';
+import type { PublicProfile } from '@/types/models';
 
 type Navigation = NativeStackNavigationProp<MessagesStackParamList, 'MessageList'>;
-type Entry = { type: 'group'; value: Group } | { type: 'friend'; value: MessageFriend };
+type Entry =
+  | { type: 'group'; value: Group }
+  | {
+      type: 'friend';
+      value: MessageFriend;
+      // Existing threads retain their ID even after the friendship ends.
+      directConversationId?: string;
+    };
 
 export function MessageFeedScreen() {
   const navigation = useNavigation<Navigation>();
@@ -23,7 +39,20 @@ export function MessageFeedScreen() {
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [groupsError, setGroupsError] = useState(false);
   const [groupsRetry, setGroupsRetry] = useState(0);
+  // The feed tracks all durable threads, including conversations with former friends.
+  const [directConversations, setDirectConversations] = useState<DirectConversation[]>([]);
+  const [directLoading, setDirectLoading] = useState(true);
+  const [directError, setDirectError] = useState(false);
+  const [directRetry, setDirectRetry] = useState(0);
+  // Index profiles by UID so conversation rows can look them up directly.
+  const [directProfiles, setDirectProfiles] = useState<Record<string, PublicProfile | null>>({});
   const [query, setQuery] = useState('');
+  const openRequest = useRef<object | null>(null);
+
+  useEffect(() => {
+    // Invalidate pending opens when the account changes or this screen unmounts.
+    return () => { openRequest.current = null; };
+  }, [user?.uid]);
 
   useEffect(() => {
     let active = true;
@@ -49,28 +78,185 @@ export function MessageFeedScreen() {
     return () => { active = false; unsubscribe(); };
   }, [user?.uid, groupsRetry]);
 
+  useEffect(() => {
+    let active = true;
+
+    // Clear the previous account's conversations before subscribing.
+    setDirectConversations([]);
+    setDirectError(false);
+    setDirectLoading(!!user);
+
+    if (!user) return;
+
+    const unsubscribe = watchDirectConversations(
+      user.uid,
+      (items) => {
+        if (!active) return;
+        setDirectConversations(items);
+        setDirectLoading(false);
+        setDirectError(false);
+      },
+      () => {
+        if (!active) return;
+        setDirectError(true);
+        setDirectLoading(false);
+      },
+    );
+
+    // Stop listening and ignore late callbacks after cleanup.
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [user?.uid, directRetry]);
+
+  useEffect(() => {
+    let active = true;
+    setDirectProfiles({});
+
+    if (!user) return;
+
+    // Collect each conversation's other participant, avoiding duplicate reads.
+    const otherUids = new Set(
+      directConversations
+        .filter((conversation) => conversation.memberIds.includes(user.uid))
+        .flatMap((conversation) =>
+          conversation.memberIds.filter((uid) => uid !== user.uid),
+        ),
+    );
+
+    void Promise.all(
+      [...otherUids].map(async (uid) => {
+        try {
+          const profileRef = doc(db, collections.publicProfiles, uid);
+          const snapshot = await getDoc(profileRef);
+
+          if (!snapshot.exists()) {
+            return [uid, null] as const;
+          }
+
+          // Extract profile fields and include doc
+          const profile = {
+            ...snapshot.data(),
+            id: snapshot.id,
+          } as PublicProfile;
+
+          return [uid, profile] as const;
+        } catch {
+          // A failed profile read should not prevent access to chat history.
+          return [uid, null] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!active) return;
+
+      // Turn [UID, profile] pairs into an object indexed by UID.
+      setDirectProfiles(Object.fromEntries(entries));
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [directConversations, user?.uid]);
+
   const entries = useMemo<Entry[]>(() => {
     if (!user || friendsUid !== user.uid) return [];
-    const term = query.trim().toLocaleLowerCase();
-    const matchingGroups = groups.filter((group) => !term || group.name.toLocaleLowerCase().includes(term));
-    const matchingFriends = friends.filter((friend) => !term || friendSearchText(friend).toLocaleLowerCase().includes(term));
-    return [...matchingGroups.map((value) => ({ type: 'group' as const, value })), ...matchingFriends.map((value) => ({ type: 'friend' as const, value }))];
-  }, [friends, friendsUid, groups, query, user]);
+    // Track people who already have a thread so they appear only once.
+    const conversationMemberUids = new Set<string>();
+    const conversationEntries: Entry[] = [];
 
-  const openEntry = (entry: Entry) => {
+    for (const conversation of directConversations) {
+      // Ignore conversations that do not include the current account.
+      if (!conversation.memberIds.includes(user.uid)) continue;
+
+      const otherUid = conversation.memberIds.find((uid) => uid !== user.uid);
+      if (!otherUid) continue;
+
+      // Remember this person so we can exclude their duplicate friend row.
+      conversationMemberUids.add(otherUid);
+
+      const profile = directProfiles[otherUid] ?? null;
+
+      // Reuse the friend row UI while retaining the existing conversation ID.
+      conversationEntries.push({
+        type: 'friend',
+        directConversationId: conversation.id,
+        value: {
+          uid: otherUid,
+          username: profile?.username || 'Unavailable user',
+          profile,
+        },
+      });
+    }
+    const term = query.trim().toLocaleLowerCase();
+
+    const matchingGroups = groups.filter(
+      (group) => !term || group.name.toLocaleLowerCase().includes(term),
+    );
+
+    // Only offer a new conversation when this person has no existing thread.
+    const friendsWithoutConversations = friends.filter(
+      (friend) => !conversationMemberUids.has(friend.uid),
+    );
+
+    const friendEntries: Entry[] = friendsWithoutConversations.map(
+      (value) => ({ type: 'friend', value }),
+    );
+
+    // Search existing conversations and new friend options together.
+    const matchingPeople = [...conversationEntries, ...friendEntries].filter(
+      (entry) =>
+        entry.type === 'friend' &&
+        (!term || friendSearchText(entry.value).toLocaleLowerCase().includes(term)),
+    );
+
+    return [
+      ...matchingGroups.map((value) => ({ type: 'group' as const, value })),
+      ...matchingPeople,
+    ];
+  }, [friends, friendsUid, groups, query, user, directConversations, directProfiles]);
+
+  const openEntry = async (entry: Entry) => {
+    if (!user || openRequest.current) return;
     if (entry.type === 'group') {
       navigation.navigate('Conversation', { kind: 'group', title: entry.value.name, memberIds: entry.value.memberIds, groupId: entry.value.id });
     } else {
-      navigation.navigate('Conversation', { kind: 'friend', title: friendDisplayName(entry.value), memberIds: [user!.uid, entry.value.uid] });
+      // Saved threads can open directly, including after unfriending.
+      if (entry.directConversationId) {
+        navigation.navigate('Conversation', {
+          kind: 'friend',
+          title: friendDisplayName(entry.value),
+          memberIds: [user.uid, entry.value.uid],
+          directConversationId: entry.directConversationId,
+        });
+        return;
+      }
+      const request = {};
+      openRequest.current = request;
+      try {
+        const conversation = await getOrCreateDirectConversation(user.uid, entry.value.uid);
+        if (openRequest.current !== request) return;
+        navigation.navigate('Conversation', {
+          kind: 'friend',
+          title: friendDisplayName(entry.value),
+          memberIds: conversation.memberIds,
+          directConversationId: conversation.id,
+        });
+      } catch (error) {
+        if (openRequest.current !== request) return;
+        Alert.alert('Could not open conversation', error instanceof Error ? error.message : 'Please try again.');
+      } finally {
+        if (openRequest.current === request) openRequest.current = null;
+      }
     }
   };
-  const loading = groupsLoading || friendsLoading || (!!user && friendsUid !== user.uid);
-  let errorMessage = 'Could not load friends.';
-  if (groupsError && friendsError) errorMessage = 'Could not load groups or friends.';
-  else if (groupsError) errorMessage = 'Could not load groups.';
+  const loading = groupsLoading || friendsLoading || directLoading || (!!user && friendsUid !== user.uid);
+  const errorMessage = 'Some messages or friends could not be loaded.';
   const retryFailedLoads = () => {
     if (groupsError) setGroupsRetry((value) => value + 1);
     if (friendsError) retryFriends();
+    // Restart the direct-conversation listener when its previous attempt failed.
+    if (directError) setDirectRetry((value) => value + 1);
   };
 
   return (
@@ -87,7 +273,7 @@ export function MessageFeedScreen() {
           </Pressable>
         </View>
 
-        {groupsError || friendsError ? (
+        {groupsError || friendsError || directError ? (
           <View style={styles.errorBanner}>
             <Text accessibilityRole="alert" style={styles.errorText}>{errorMessage}</Text>
             <Pressable accessibilityRole="button" onPress={retryFailedLoads} style={styles.retryButton}>
@@ -106,7 +292,7 @@ export function MessageFeedScreen() {
             renderItem={({ item }) => (
               <MessageEntryRow entry={item} onOpen={openEntry} />
             )}
-            ListEmptyComponent={<MessageFeedEmptyMessage hasError={groupsError || friendsError} query={query} />}
+            ListEmptyComponent={<MessageFeedEmptyMessage hasError={groupsError || friendsError || directError} query={query} />}
             showsVerticalScrollIndicator={false}
           />
         )}

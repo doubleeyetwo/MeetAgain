@@ -227,7 +227,7 @@ export function FriendsScreen() {
                   <Text style={styles.retryText}>Retry</Text>
                 </Pressable>
               </View>
-            ) : null}
+            ) : undefined}
             ListEmptyComponent={(
               <View style={styles.stateContainer}>
                 <Text style={styles.stateText}>

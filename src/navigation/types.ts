@@ -30,12 +30,21 @@ export type MainTabParamList = {
 export type MessagesStackParamList = {
   MessageList: undefined;
   AddMembers: undefined;
-  Conversation: {
-    kind: 'friend' | 'group';
-    title: string;
-    memberIds: string[];
-    groupId?: string;
-  };
+  Conversation:
+  | {
+      kind: 'friend';
+      title: string;
+      memberIds: string[];
+      // Required ID for opening the direct conversation's message history.
+      directConversationId: string;
+    }
+  | {
+      kind: 'group';
+      title: string;
+      memberIds: string[];
+      // Required ID for opening the group's message history.
+      groupId: string;
+    };
 };
 
 export type AppStackParamList = {

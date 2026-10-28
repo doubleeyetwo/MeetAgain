@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View, TextInput } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,31 +8,78 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
+import { pickChatPhotoFromLibrary } from '@/features/auth/profilePhoto';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { MessagesStackParamList } from '@/navigation/types';
 import { PublicProfile } from '@/types/models';
 import {
   sendGroupMessage,
+  sendGroupPhoto,
   watchGroupMessages,
   type GroupMessage,
 } from '../messages';
 import { sendGroupPoll } from '../polls';
 import { PollCreationModal } from '../PollCreationModal';
 import { PollMessageCard } from '../PollMessageCard';
+import { sendDirectMessage, watchDirectMessages } from '../directMessages';
+import {
+  watchDirectFriendship,
+} from '@/features/messages/directConversations';
+
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'Conversation'>;
+type Attachment = { uri: string; dataUrl: string };
 
 export function ConversationScreen({ navigation, route }: Props) {
   const { user } = useAuth();
-  const { kind, title, memberIds, groupId } = route.params;
+  const { kind, title, memberIds } = route.params;
+  // Check whether we have a group chat for direct message
+  const groupId = route.params.kind === 'group' ? route.params.groupId : undefined;
+  const directConversationId = route.params.kind === 'friend' ? route.params.directConversationId : undefined;
+  // Find the participant whose UID differs from the signed-in user's
+  const otherUid = memberIds.find((uid) => uid !== user?.uid);
   const [profiles, setProfiles] = useState<Record<string, PublicProfile>>({});
   const [loading, setLoading] = useState(kind === 'group');
   const [sendError, setSendError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+  const sendLock = useRef(false);
+  const pickLock = useRef(false);
+  const active = useRef(true);
+  const conversationKey = `${kind}:${groupId ?? directConversationId ?? ''}:${user?.uid ?? ''}`;
+  const currentConversation = useRef(conversationKey);
+  currentConversation.current = conversationKey;
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
+
+  useEffect(() => {
+    setDraft('');
+    setAttachment(null);
+    setMenuOpen(false);
+    setFullscreenPhoto(null);
+    setSendError(null);
+  }, [conversationKey]);
+  const [friendshipAccepted, setFriendshipAccepted] = useState(false);
+  const [friendshipLoading, setFriendshipLoading] = useState(true);
+  const [friendshipError, setFriendshipError] = useState<string | null>(null);
+
+  // Block direct-message composition until friendship is confirmed without errors.
+  const directComposerDisabled =
+    kind === 'friend' &&
+    (friendshipLoading || friendshipError !== null || !friendshipAccepted);
+
+  // Also block composition while signed out or while a message write is pending.
+  const composerDisabled = !user || sending || directComposerDisabled;
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const canPostToGroup = kind === 'group' && !!groupId;
@@ -62,14 +109,29 @@ export function ConversationScreen({ navigation, route }: Props) {
     setMessagesError(null);
     setMessagesLoading(false);
 
-    if (!user || kind !== 'group' || !groupId) return;
+    // Check if user
+    if (!user) return;
+
+    // Select the conversation ID and listener based on the route kind.
+    let conversationId: string;
+    let watchMessages: typeof watchGroupMessages;
+
+    if (kind === 'friend') {
+      if (!directConversationId) return;
+      conversationId = directConversationId;
+      watchMessages = watchDirectMessages;
+    } else {
+      if (!groupId) return;
+      conversationId = groupId;
+      watchMessages = watchGroupMessages;
+    }
 
     setMessagesLoading(true);
 
     let active = true;
 
-    const unsubscribe = watchGroupMessages(
-      groupId,
+    const unsubscribe = watchMessages(
+      conversationId,
       (nextMessages) => {
         if (!active) return;
         setMessages(nextMessages);
@@ -87,11 +149,66 @@ export function ConversationScreen({ navigation, route }: Props) {
       active = false;
       unsubscribe();
     };
-  }, [groupId, kind, user?.uid]);
+  }, [groupId, directConversationId, kind, user?.uid]);
+
+  useEffect(() => {
+    setFriendshipAccepted(false);
+    setFriendshipLoading(true);
+    setFriendshipError(null);
+
+    if (kind !== 'friend' || !user || !otherUid) {
+      setFriendshipLoading(false);
+      return;
+    }
+
+    let active = true;
+
+    const unsubscribe = watchDirectFriendship(
+      user.uid,
+      otherUid,
+      (accepted) => {
+        if (!active) return;
+        // Store acceptance and finish loading
+        setFriendshipAccepted(accepted);
+        setFriendshipLoading(false);
+      },
+      (error) => {
+        if (!active) return;
+        setFriendshipAccepted(false);
+        setFriendshipError(error.message);
+        setFriendshipLoading(false);
+      },
+    );
+    // Stop this listener and ignore late callbacks when the pair changes.
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [kind, user?.uid, otherUid]);
+
+  async function handlePickPhoto() {
+    if (composerDisabled || pickLock.current || sendLock.current) return;
+    pickLock.current = true;
+    const startedIn = currentConversation.current;
+    setMenuOpen(false);
+    setPicking(true);
+    setSendError(null);
+    try {
+      const result = await pickChatPhotoFromLibrary();
+      // Do not attach a late picker result to a different conversation.
+      if (active.current && currentConversation.current === startedIn) {
+        if (result.error) setSendError(result.error);
+        else if (result.photo) setAttachment({ uri: result.photo.uri, dataUrl: result.photo.dataUrl });
+      }
+    } finally {
+      pickLock.current = false;
+      if (active.current) setPicking(false);
+    }
+  }
 
   async function handleSend() {
     // Ignore another send while the current write is pending.
-    if (sending) return;
+    if (sendLock.current || pickLock.current) return;
 
     setSendError(null);
 
@@ -100,30 +217,68 @@ export function ConversationScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (kind !== 'group' || !groupId) {
-      setSendError('Sending to friends is not available yet.');
+    if (directComposerDisabled) {
+      setSendError(
+        friendshipLoading
+          ? 'Checking friendship status...'
+          : friendshipError !== null
+            ? 'Could not verify friendship. Please reopen the conversation.'
+            : 'You must be friends to send messages.',
+      );
       return;
     }
 
+    sendLock.current = true;
+    const startedIn = currentConversation.current;
     setSending(true);
 
     try {
-      // Await sendGroupMessage using groupId, user.uid, and draft.
-      await sendGroupMessage(groupId, user.uid, draft);
+      // Select the sending service while sharing draft and error handling.
+      if (kind === 'friend') {
+        if (!directConversationId) {
+          throw new Error('The direct conversation could not be found.');
+        }
+
+        await sendDirectMessage(directConversationId, user.uid, draft, attachment?.dataUrl);
+      } else {
+        if (!groupId) {
+          throw new Error('The group could not be found.');
+        }
+
+        if (attachment) await sendGroupPhoto(groupId, user.uid, attachment.dataUrl, draft);
+        else await sendGroupMessage(groupId, user.uid, draft);
+      }
 
       // Clear the draft only after the write succeeds.
-      setDraft('');
+      if (active.current && currentConversation.current === startedIn) {
+        setDraft('');
+        setAttachment(null);
+        setMenuOpen(false);
+      }
     }
     catch (error) {
       // Preserve the draft so the user can correct it or retry.
-      setSendError(
+      if (active.current && currentConversation.current === startedIn) setSendError(
         error instanceof Error ? error.message : 'Could not send your message.',
       );
     }
     finally {
       // Restore the input and button after either success or failure.
-      setSending(false);
+      sendLock.current = false;
+      if (active.current) setSending(false);
     }
+  }
+
+  function openPollCreation() {
+    setAttachMenuOpen(false);
+    setPollOpen(true);
+  }
+
+  async function handlePostPoll(question: string, options: string[]) {
+    // PollCreationModal shows a thrown error and keeps the entered text.
+    if (!user) throw new Error('Sign in before posting a poll.');
+    if (!canPostToGroup) throw new Error('Polls are only available in group chats.');
+    await sendGroupPoll(groupId!, user.uid, question, options);
   }
 
   function openPollCreation() {
@@ -180,9 +335,7 @@ export function ConversationScreen({ navigation, route }: Props) {
             <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
               {messages.length === 0 ? (
                 <Text style={styles.emptyText}>
-                  {kind === 'group'
-                    ? 'No messages yet. Start the conversation!'
-                    : 'Friend messaging is not available yet.'}
+                  No messages yet. Start the conversation!
                 </Text>
               ) : null}
 
@@ -216,9 +369,12 @@ export function ConversationScreen({ navigation, route }: Props) {
                       {...gradientDirection.horizontal}
                       style={styles.messageBubble}
                     >
-                      <Text style={styles.messageText}>
-                        {message.text}
-                      </Text>
+                      {message.imageDataUrl ? (
+                        <Pressable accessibilityRole="button" accessibilityLabel="View photo full screen" onPress={() => setFullscreenPhoto(message.imageDataUrl!)}>
+                          <Image source={{ uri: message.imageDataUrl }} style={styles.messageImage} resizeMode="cover" />
+                        </Pressable>
+                      ) : null}
+                      {message.text ? <Text style={styles.messageText}>{message.text}</Text> : null}
                     </LinearGradient>
                   </View>
                 );
@@ -244,7 +400,43 @@ export function ConversationScreen({ navigation, route }: Props) {
             </Pressable>
           </View>
         ) : null}
-        {/* Keep the composer below the message area and error display. */}
+        {menuOpen ? (
+          <View style={styles.attachmentMenu}>
+            {kind === 'group' ? (
+              <View style={[styles.menuRow, styles.menuRowDisabled]} accessibilityState={{ disabled: true }}>
+                <Ionicons name="bar-chart-outline" size={22} color={colors.white} />
+                <Text style={styles.menuText}>Create a Poll</Text>
+                <Text style={styles.menuHint}>Coming soon</Text>
+              </View>
+            ) : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="Upload photo" onPress={() => { void handlePickPhoto(); }} disabled={composerDisabled || picking} style={styles.menuRow}>
+              <Ionicons name="camera-outline" size={22} color={colors.white} />
+              <Text style={styles.menuText}>Upload Photo</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {attachment ? (
+          <View style={styles.attachmentPreview}>
+            <Image source={{ uri: attachment.uri }} style={styles.previewImage} />
+            <Text style={styles.previewLabel} numberOfLines={1}>Photo ready to send</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Remove attachment" onPress={() => setAttachment(null)} disabled={composerDisabled || picking} hitSlop={10}>
+              <Ionicons name="close-circle" size={24} color={colors.white} />
+            </Pressable>
+          </View>
+        ) : null}
+        {/* Explain direct-message restrictions while keeping history visible. */}
+        {kind === 'friend' && directComposerDisabled ? (
+          <Text
+            accessibilityRole="alert"
+            style={friendshipError !== null ? styles.errorText : styles.stateText}
+          >
+            {friendshipLoading
+              ? 'Checking friendship status...'
+              : friendshipError !== null
+                ? 'Could not verify friendship. Please reopen the conversation.'
+                : 'You must be friends to send messages.'}
+          </Text>
+        ) : null}
         <View style={styles.composer}>
           {canPostToGroup ? (
             <Pressable
@@ -257,6 +449,9 @@ export function ConversationScreen({ navigation, route }: Props) {
               <Ionicons name={attachMenuOpen ? 'close' : 'add'} size={24} color={colors.white} />
             </Pressable>
           ) : null}
+          <Pressable accessibilityRole="button" accessibilityLabel={menuOpen ? 'Close attachment menu' : 'Add attachment'} onPress={() => setMenuOpen(!menuOpen)} disabled={composerDisabled || picking} style={styles.addButton}>
+            <Ionicons name={menuOpen ? 'close' : 'add'} size={25} color={colors.white} />
+          </Pressable>
           <TextInput
             style={styles.messageInput}
             value={draft}
@@ -265,17 +460,17 @@ export function ConversationScreen({ navigation, route }: Props) {
             placeholder="Message..."
             placeholderTextColor="rgba(244,241,247,0.65)"
             accessibilityLabel="Message"
-            editable={!sending}
+            editable={!composerDisabled && !picking}
           />
 
           <Pressable
             style={[
               styles.sendButton,
-              (sending || !draft.trim()) && styles.sendButtonDisabled,
+              (composerDisabled || picking || (!draft.trim() && !attachment)) && styles.sendButtonDisabled,
             ]}
             accessibilityRole="button"
             accessibilityLabel="Send message"
-            disabled={sending || !draft.trim()}
+            disabled={composerDisabled || picking || (!draft.trim() && !attachment)}
             onPress={handleSend}
           >
             {sending ? (
@@ -287,6 +482,14 @@ export function ConversationScreen({ navigation, route }: Props) {
         </View>
         <PollCreationModal visible={pollOpen} onClose={() => setPollOpen(false)} onPost={handlePostPoll} />
       </SafeAreaView>
+      <Modal visible={fullscreenPhoto !== null} transparent onRequestClose={() => setFullscreenPhoto(null)} animationType="fade">
+        <View style={styles.photoModal}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close photo" onPress={() => setFullscreenPhoto(null)} style={styles.closePhoto}>
+            <Ionicons name="close" size={30} color={colors.white} />
+          </Pressable>
+          {fullscreenPhoto ? <Image source={{ uri: fullscreenPhoto }} style={styles.fullscreenImage} resizeMode="contain" /> : null}
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -306,6 +509,8 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingBottom: 48 },
   emptyIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.cardDarker, alignItems: 'center', justifyContent: 'center' },
   emptyText: { ...text.body, color: 'rgba(244,241,247,0.8)', fontSize: 16 },
+  stateText: { ...text.body, color: colors.white, textAlign: 'center', lineHeight: 21, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  errorText: { ...text.body, color: '#ffb7b7', paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, textAlign: 'center' },
   composer: {
     // A row places the input and send button beside each other.
     flexDirection: 'row',
@@ -374,4 +579,17 @@ const styles = StyleSheet.create({
     ...text.body,
     color: colors.white,
   },
+  messageImage: { width: 200, maxWidth: '100%', height: 200, borderRadius: 12, marginBottom: 4 },
+  attachmentMenu: { alignSelf: 'flex-start', width: 240, maxWidth: '90%', marginHorizontal: spacing.md, marginBottom: spacing.sm, padding: spacing.xs, borderRadius: 18, backgroundColor: colors.cardDarker },
+  menuRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
+  menuRowDisabled: { opacity: 0.55 },
+  menuText: { ...text.body, color: colors.white, flex: 1 },
+  menuHint: { ...text.body, color: colors.white, fontSize: 12 },
+  attachmentPreview: { marginHorizontal: spacing.md, marginBottom: spacing.sm, padding: spacing.sm, borderRadius: 14, backgroundColor: colors.cardDarker, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  previewImage: { width: 42, height: 42, borderRadius: 8 },
+  previewLabel: { ...text.body, color: colors.white, flex: 1 },
+  addButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  photoModal: { flex: 1, backgroundColor: '#100A1B', justifyContent: 'center' },
+  closePhoto: { position: 'absolute', top: 48, right: 20, zIndex: 1, padding: 8 },
+  fullscreenImage: { width: '100%', height: '80%' },
 });
