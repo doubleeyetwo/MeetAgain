@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
   View,
+  ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -22,6 +23,7 @@ import {
 } from '@/features/auth/profilePhoto';
 import { colors, fontFamily, radius, spacing } from '@/theme';
 import { EditPhoto } from '@/components/EditPhoto';
+
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
@@ -196,7 +198,12 @@ export function CreateEventScreen({ navigation, route }: Props) {
             </Pressable>
 
             {showCategories && (
-              <View style={styles.dropdown}>
+              <ScrollView
+                style={styles.dropdown}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}
+              >
                 {EVENT_CATEGORIES.map((item) => (
                   <Pressable
                     key={item}
@@ -211,7 +218,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
                     </Text>
                   </Pressable>
                 ))}
-              </View>
+              </ScrollView>
             )}
 
             {category === 'Other' && (
@@ -327,10 +334,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 54,
     width: '100%',
+    maxHeight: 180,
     borderRadius: radius.md,
     backgroundColor: colors.cardLighter,
     overflow: 'hidden',
     zIndex: 20,
+    elevation: 20,
   },
 
   dropdownItem: {

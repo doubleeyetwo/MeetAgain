@@ -23,6 +23,7 @@ type CreateEventInput = {
   tasks: EventTask[];
   reminderMinutesBefore: number | null;
   photoURL: string | null;
+  location: string;
 };
 
 export async function createEvent(input: CreateEventInput) {
@@ -44,6 +45,7 @@ export async function createEvent(input: CreateEventInput) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     photoURL: input.photoURL,
+    location: input.location,
   });
 
   return eventRef.id;

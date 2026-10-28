@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, onSnapshot, query, where, } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -26,6 +26,7 @@ import { watchGroup } from '../groups';
 import {
   watchDirectFriendship,
 } from '@/features/messages/directConversations';
+import { EventChatCard } from '../EventChatCard';
 
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'Conversation'>;
@@ -62,6 +63,52 @@ export function ConversationScreen({ navigation, route }: Props) {
   const canPostToGroup = kind === 'group' && !!groupId;
   const [groupAccess, setGroupAccess] = useState<{ key: string; state: 'checking' | 'ready' | 'cleanup' | 'unavailable' }>({ key: conversationKey, state: 'checking' });
   const groupReady = kind !== 'group' || (groupAccess.key === conversationKey && groupAccess.state === 'ready');
+  const [groupEvents, setGroupEvents] = useState<
+  {
+    id: string;
+    title: string;
+    startAt: Date;
+    endAt: Date;
+    location?: string;
+    photoURL?: string | null;
+  }[]
+>([]);
+
+useEffect(() => {
+  if (kind !== 'group' || !groupId || !user) {
+    setGroupEvents([]);
+    return;
+  }
+
+  const eventsQuery = query(
+    collection(db, 'events'),
+    where('groupId', '==', groupId),
+    where('participantIds', 'array-contains', user.uid)
+  );
+
+  return onSnapshot(
+    eventsQuery,
+    (snapshot) => {
+      setGroupEvents(
+        snapshot.docs.map((eventDoc) => {
+          const data = eventDoc.data();
+
+          return {
+            id: eventDoc.id,
+            title: data.title,
+            startAt: data.startAt.toDate(),
+            endAt: data.endAt.toDate(),
+            location: data.location,
+          };
+        })
+      );
+    },
+    (error) => {
+      console.error('Unable to load group events:', error);
+      setGroupEvents([]);
+    }
+  );
+}, [kind, groupId, user?.uid]);
 
   useEffect(() => {
     if (kind !== 'group' || !groupId || !user) return;
@@ -329,7 +376,15 @@ export function ConversationScreen({ navigation, route }: Props) {
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
         <View style={styles.header}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Go back to messages" hitSlop={12} onPress={() => navigation.goBack()} style={styles.side}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Go back to messages" hitSlop={12}
+          onPress={() => {
+            if (route.params.kind === 'group') {
+              navigation.navigate('MessageList');
+            } else {
+              navigation.goBack();
+            }
+          }}
+          style={styles.side}>
             <Ionicons name="chevron-back" size={25} color={colors.white} />
           </Pressable>
           {groupId ? (
@@ -382,6 +437,22 @@ export function ConversationScreen({ navigation, route }: Props) {
                   No messages yet. Start the conversation!
                 </Text>
               ) : null}
+
+              {groupEvents.map((event) => (
+                <EventChatCard
+                  key={event.id}
+                  title={event.title}
+                  date={event.startAt.toLocaleDateString()}
+                  time={`${event.startAt.toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })} – ${event.endAt.toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}`}
+                  location={event.location}
+                />
+              ))}
 
               {messages.map((message) => {
                 // Compare identities to decide which side this message belongs on.

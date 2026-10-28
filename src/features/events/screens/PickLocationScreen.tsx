@@ -80,12 +80,11 @@ export function PickLocationScreen({
     }
 
     navigation.navigate('PickTime', {
-      eventName: route.params.eventName,
-      category: route.params.category,
-      presetId: route.params.presetId,
+      ...route.params,
       location: trimmed,
     });
   };
+
 
   return (
     <KeyboardAvoidingView

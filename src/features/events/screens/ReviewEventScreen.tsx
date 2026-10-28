@@ -41,6 +41,7 @@ import { EditPhoto } from '@/components/EditPhoto';
 
 import { createEvent } from '@/features/events/eventService';
 import { createGroup } from '@/features/messages/groups';
+import { CommonActions } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<
   EventCreationStackParamList,
@@ -84,12 +85,19 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     end: new Date(endAt),
   };
   const { user } = useAuth();
+
+  console.log('REVIEW EVENT PHOTO CHECK:', {
+  receivedPhoto: !!initialEventPhoto,
+  photoLength: initialEventPhoto?.length ?? 0,
+  photoPrefix: initialEventPhoto?.slice(0, 30),
+});
+
   const [eventPhoto, setEventPhoto] = useState<string | null>(
   initialEventPhoto ?? null
 );
 
   const [eventPhotoDataUrl, setEventPhotoDataUrl] = useState<string | null>(
-  initialEventPhoto?.startsWith('data:image/jpeg;base64,')
+  initialEventPhoto?.startsWith('data:image/')
     ? initialEventPhoto
     : null
 );
@@ -379,36 +387,22 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   };
 
   const openDeleteConfirmation = () => {
-    if (!deleteTarget || !deleteEntry) return;
+  if (!deleteEntry) return;
 
-    const selection = deleteEntry;
-    const entryName = deleteTarget.name;
+  const { type, id } = deleteEntry;
 
-    setDeleteEntry(null);
-
-    Alert.alert(
-      `Delete ${selection.type}?`,
-      `Are you sure you want to delete "${entryName}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            if (selection.type === 'item') {
-              setItems((current) =>
-                current.filter((item) => item.id !== selection.id)
-              );
-            } else {
-              setTasks((current) =>
-                current.filter((task) => task.id !== selection.id)
-              );
-            }
-          },
-        },
-      ]
+  if (type === 'item') {
+    setItems((current) =>
+      current.filter((item) => item.id !== id)
     );
-  };
+  } else {
+    setTasks((current) =>
+      current.filter((task) => task.id !== id)
+    );
+  }
+
+  setDeleteEntry(null);
+};
 
   const renderAvatar = (
     type: AddType,
@@ -478,12 +472,12 @@ if (participantIds.length > 1) {
   groupId = group.id;
 }
 
-console.log('STEP 3: Saving event to Firestore');
 const eventId = await createEvent({
   creatorId: user.uid,
   title: eventName,
   category,
   description,
+  location: location ?? '',
   photoURL: eventPhotoDataUrl,
   startAt,
   endAt,
@@ -499,7 +493,43 @@ const eventId = await createEvent({
   }[reminder] ?? null,
 });
 
-Alert.alert('Event Created', `Event saved! ID: ${eventId}`);
+if (groupId) {
+  navigation.getParent()?.navigate('Messages', {
+    screen: 'Conversation',
+    params: {
+      kind: 'group',
+      title: eventName,
+      memberIds: participantIds,
+      groupId,
+    },
+  });
+} else {
+  if (groupId) {
+  const tabs = navigation.getParent();
+
+  tabs?.navigate('Messages');
+
+  tabs?.dispatch(
+    CommonActions.navigate({
+      name: 'Messages',
+      params: {
+        screen: 'Conversation',
+        params: {
+          kind: 'group',
+          title: eventName,
+          memberIds: participantIds,
+          groupId,
+        },
+      },
+    })
+  );
+} else {
+  Alert.alert('Event Created', 'Your event was saved!');
+  navigation.getParent()?.navigate('Home');
+}
+  navigation.getParent()?.navigate('Home');
+}
+
 } catch (error) {
     console.error('Failed to create event:', error);
     Alert.alert('Error', 'Unable to save event. Please try again.');
