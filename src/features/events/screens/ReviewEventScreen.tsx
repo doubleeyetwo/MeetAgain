@@ -66,7 +66,7 @@ type SelectedEntry = {
 };
 
 export function ReviewEventScreen({ navigation, route }: Props) {
-  const { eventName, category, startAt, endAt } = route.params;
+  const { eventName, category, startAt, endAt, location } = route.params;
   const eventTimes = {
     start: new Date(startAt),
     end: new Date(endAt),
@@ -495,7 +495,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
                 color={colors.white}
               />
               <Text style={styles.eventInfoText}>
-                Location not selected
+                {location || 'Location not selected'}
               </Text>
             </View>
 
