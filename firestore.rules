@@ -662,12 +662,32 @@ service cloud.firestore {
           && event.participantIds.toSet().size() == event.participantIds.size();
       }
       function validGroup(event) {
-        return (event.get('groupId', null) == null
-          && event.participantIds == [request.auth.uid])
-          || (event.get('groupId', null) is string
+        return (event.get('directConversationId', null) is string
+          && event.get('groupId', null) == null
+          && existsAfter(/databases/$(database)/documents/directConversations/$(event.directConversationId))
+          && getAfter(/databases/$(database)/documents/directConversations/$(event.directConversationId)).data.memberIds.size() == 2
+          && getAfter(/databases/$(database)/documents/directConversations/$(event.directConversationId)).data.memberIds == event.participantIds
+          && event.participantIds.size() == 2
+          && request.auth.uid in getAfter(/databases/$(database)/documents/directConversations/$(event.directConversationId)).data.memberIds
+          && acceptedEventPair(event))
+          || (event.get('directConversationId', null) == null
+            && event.get('groupId', null) == null
+            && event.participantIds == [request.auth.uid])
+          || (event.get('directConversationId', null) == null
+            && event.get('groupId', null) is string
             && existsAfter(/databases/$(database)/documents/groups/$(event.groupId))
             && getAfter(/databases/$(database)/documents/groups/$(event.groupId)).data.get('deleting', false) == false
             && event.participantIds == getAfter(/databases/$(database)/documents/groups/$(event.groupId)).data.memberIds);
+      }
+      function acceptedEventPair(event) {
+        let pairId = event.participantIds[0] < event.participantIds[1]
+          ? event.participantIds[0] + '_' + event.participantIds[1]
+          : event.participantIds[1] + '_' + event.participantIds[0];
+        let friendshipPath = /databases/$(database)/documents/friendships/$(pairId);
+        return pairId == event.directConversationId
+          && existsAfter(friendshipPath)
+          && getAfter(friendshipPath).data.status == 'accepted'
+          && getAfter(friendshipPath).data.memberIds == event.participantIds;
       }
       function validEvent() {
         let event = request.resource.data;
@@ -679,7 +699,7 @@ service cloud.firestore {
             'creatorId', 'title', 'description', 'location', 'startAt',
             'endAt', 'participantIds', 'status', 'createdAt', 'updatedAt',
             'category', 'groupId', 'photoURL', 'items', 'tasks', 'rsvps',
-            'reminderMinutesBefore'
+            'reminderMinutesBefore', 'directConversationId'
           ])
           && event.creatorId == request.auth.uid
           && event.title is string

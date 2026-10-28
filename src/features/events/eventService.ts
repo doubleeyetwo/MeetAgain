@@ -18,6 +18,7 @@ type CreateEventInput = {
   startAt: string;
   endAt: string;
   groupId: string | null;
+  directConversationId?: string;
   participantIds: string[];
   items: EventItem[];
   tasks: EventTask[];
@@ -31,12 +32,15 @@ export async function createEvent(input: CreateEventInput) {
 
   await setDoc(eventRef, {
     creatorId: input.creatorId,
-    title: input.title.trim(),
+    // The review screen presents this fallback when the title is blank, so
+    // persist the same value accepted by the event rules.
+    title: input.title.trim() || 'Untitled Event',
     category: input.category,
     description: input.description,
     startAt: Timestamp.fromDate(new Date(input.startAt)),
     endAt: Timestamp.fromDate(new Date(input.endAt)),
     groupId: input.groupId,
+    ...(input.directConversationId ? { directConversationId: input.directConversationId } : {}),
     participantIds: input.participantIds,
     items: input.items,
     tasks: input.tasks,

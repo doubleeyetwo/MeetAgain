@@ -70,6 +70,7 @@ export function SelectMembersScreen({
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
   // Load the user's existing group chats.
   // This reuses the same function as the Messages screen.
@@ -130,9 +131,8 @@ export function SelectMembersScreen({
     const search = query.trim().toLowerCase();
 
     const matchingGroups = groups
-      .filter((group) =>
-        group.name.toLowerCase().includes(search)
-      )
+      .filter((group) => !group.deleting &&
+        group.name.toLowerCase().includes(search))
       .map((value) => ({
         type: 'group' as const,
         value,
@@ -154,6 +154,7 @@ export function SelectMembersScreen({
 
   // Select or deselect one friend.
   const toggleFriend = (uid: string) => {
+    setSelectedGroupId(null);
     setSelected((current) => {
       if (current.includes(uid)) {
         return current.filter((id) => id !== uid);
@@ -170,10 +171,9 @@ export function SelectMembersScreen({
   // Selecting a group replaces the current selection
   // with that group's members.
   //
-  // We don't require every existing group member to
-  // still appear in the accepted-friends list.
   const toggleGroup = (group: Group) => {
     if (!user) return;
+    if (group.deleting) return;
 
     const members = group.memberIds.filter(
       (uid) => uid !== user.uid
@@ -194,13 +194,18 @@ export function SelectMembersScreen({
       selected.length === members.length &&
       members.every((uid) => selected.includes(uid));
 
-    setSelected(alreadySelected ? [] : members);
+    if (alreadySelected && selectedGroupId === group.id) {
+      setSelected([]);
+      setSelectedGroupId(null);
+    } else {
+      setSelected(members);
+      setSelectedGroupId(group.id);
+    }
   };
 
-  // A group is checked when its exact membership
-  // matches the current selected people.
+  // Check only the group explicitly selected by the user.
   const isGroupSelected = (group: Group) => {
-    if (!user) return false;
+    if (!user || selectedGroupId !== group.id) return false;
 
     const members = group.memberIds.filter(
       (uid) => uid !== user.uid
@@ -243,28 +248,30 @@ export function SelectMembersScreen({
       return;
     }
 
-    // Existing groups can be reused even if some
-    // members are no longer accepted friends.
-    const matchingGroup = groups.find((group) =>
-      isGroupSelected(group)
-    );
+    const selectedIds = [user.uid, ...selected].sort();
+    const sameMembers = (group: Group) => {
+      const memberIds = [...group.memberIds].sort();
+      return memberIds.length === selectedIds.length &&
+        memberIds.every((uid, index) => uid === selectedIds[index]);
+    };
+    const explicitlySelectedGroup = selectedGroupId
+      ? groups.find((group) => !group.deleting && group.id === selectedGroupId && sameMembers(group))
+      : undefined;
+    const matchingGroup = explicitlySelectedGroup ?? groups.find((group) => !group.deleting && sameMembers(group));
 
-    // A new group combination must contain only
-    // currently accepted friends.
-    if (
-      !matchingGroup &&
-      selected.some((uid) => !friendIds.has(uid))
-    ) {
+    // Only a new group requires every selected person to remain an accepted friend.
+    if (!matchingGroup && selected.some((uid) => !friendIds.has(uid))) {
       Alert.alert(
         'Cannot Create Group',
-        'You can reuse an existing group, but everyone in a new group must be an accepted friend.'
+        'Everyone in a new event group must be an accepted friend.'
       );
       return;
     }
 
     navigation.navigate('ReviewEvent', {
       ...route.params,
-      selectedMemberIds: [user.uid, ...selected].sort(),
+      selectedMemberIds: selectedIds,
+      matchingGroupId: matchingGroup?.id,
     });
   };
 

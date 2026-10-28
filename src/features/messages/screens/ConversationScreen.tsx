@@ -75,14 +75,16 @@ export function ConversationScreen({ navigation, route }: Props) {
 >([]);
 
 useEffect(() => {
-  if (kind !== 'group' || !groupId || !user) {
+  const eventConversationId = kind === 'group' ? groupId : directConversationId;
+  const conversationField = kind === 'group' ? 'groupId' : 'directConversationId';
+  if (!eventConversationId || !user) {
     setGroupEvents([]);
     return;
   }
 
   const eventsQuery = query(
     collection(db, 'events'),
-    where('groupId', '==', groupId),
+    where(conversationField, '==', eventConversationId),
     where('participantIds', 'array-contains', user.uid)
   );
 
@@ -109,7 +111,7 @@ useEffect(() => {
       setGroupEvents([]);
     }
   );
-}, [kind, groupId, user?.uid]);
+}, [kind, groupId, directConversationId, user?.uid]);
 
   useEffect(() => {
     if (kind !== 'group' || !groupId || !user) return;
@@ -378,13 +380,7 @@ useEffect(() => {
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
         <View style={styles.header}>
           <Pressable accessibilityRole="button" accessibilityLabel="Go back to messages" hitSlop={12}
-          onPress={() => {
-            if (route.params.kind === 'group') {
-              navigation.navigate('MessageList');
-            } else {
-              navigation.goBack();
-            }
-          }}
+          onPress={() => navigation.navigate('MessageList')}
           style={styles.side}>
             <Ionicons name="chevron-back" size={25} color={colors.white} />
           </Pressable>

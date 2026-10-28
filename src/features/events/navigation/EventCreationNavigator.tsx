@@ -68,6 +68,7 @@ export type EventCreationStackParamList = {
     startAt: string;
     endAt: string;
     selectedMemberIds: string[];
+    matchingGroupId?: string;
     location?: string;
   };
 };

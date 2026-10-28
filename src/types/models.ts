@@ -52,6 +52,7 @@ export type MeetEvent = {
   // Additional event details
   category?: string;
   groupId?: string | null;
+  directConversationId?: string;
   photoURL?: string | null;
 
   // Planning

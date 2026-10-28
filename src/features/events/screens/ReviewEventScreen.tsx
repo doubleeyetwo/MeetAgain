@@ -41,7 +41,7 @@ import { EditPhoto } from '@/components/EditPhoto';
 
 import { createEvent } from '@/features/events/eventService';
 import { createGroup } from '@/features/messages/groups';
-import { CommonActions } from '@react-navigation/native';
+import { getOrCreateDirectConversation } from '@/features/messages/directConversations';
 
 type Props = NativeStackScreenProps<
   EventCreationStackParamList,
@@ -78,6 +78,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     endAt,
     eventPhoto: initialEventPhoto,
     selectedMemberIds = [],
+    matchingGroupId,
     location,
   } = route.params;
   const eventTimes = {
@@ -446,6 +447,19 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
   if (!user || savingEvent) return;
 
+  const normalizedTitle = eventName.trim() || 'Untitled Event';
+  const startTime = new Date(startAt).getTime();
+  const endTime = new Date(endAt).getTime();
+  if (normalizedTitle.length > 150) {
+    Alert.alert('Event Title Too Long', 'Event titles must be 150 characters or fewer.');
+    return;
+  }
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) {
+    Alert.alert('Invalid Event Time', 'Choose an end time after the start time.');
+    return;
+  }
+
+  let saveStage = 'event group';
   try {
 setSavingEvent(true);
 
@@ -460,21 +474,34 @@ console.log('EVENT PARTICIPANTS:', {
   participantIds,
 });
 
-let groupId: string | null = null;
+// A two-person event always uses the durable DM, even if an exact group exists.
+const isDirectEvent = participantIds.length === 2;
+let groupId: string | null = isDirectEvent ? null : (matchingGroupId ?? null);
+let directConversationId: string | undefined;
+let directConversationTitle = eventName;
 
-if (participantIds.length > 1) {
+if (isDirectEvent) {
+  saveStage = 'direct conversation';
+  const otherId = participantIds.find((id) => id !== user.uid);
+  if (!otherId) throw new Error('Choose one other person for a direct event.');
+  const conversation = await getOrCreateDirectConversation(user.uid, otherId);
+  directConversationId = conversation.id;
+  const otherProfile = await getDoc(doc(db, 'publicProfiles', otherId));
+  directConversationTitle = otherProfile.data()?.displayName ?? eventName;
+} else if (participantIds.length > 1 && !groupId) {
   const friendIds = participantIds.filter(
     (id) => id !== user.uid
   );
-  console.log('STEP 2: Creating or finding group');
+  console.log('Creating a new group for this event');
 
   const group = await createGroup(user.uid, friendIds);
   groupId = group.id;
 }
 
+saveStage = 'event';
 const eventId = await createEvent({
   creatorId: user.uid,
-  title: eventName,
+  title: normalizedTitle,
   category,
   description,
   location: location ?? '',
@@ -482,6 +509,7 @@ const eventId = await createEvent({
   startAt,
   endAt,
   groupId,
+  directConversationId,
   participantIds,
   items,
   tasks,
@@ -493,9 +521,21 @@ const eventId = await createEvent({
   }[reminder] ?? null,
 });
 
-if (groupId) {
+if (directConversationId) {
   navigation.getParent()?.navigate('Messages', {
     screen: 'Conversation',
+    initial: false,
+    params: {
+      kind: 'friend',
+      title: directConversationTitle,
+      memberIds: participantIds,
+      directConversationId,
+    },
+  });
+} else if (groupId) {
+  navigation.getParent()?.navigate('Messages', {
+    screen: 'Conversation',
+    initial: false,
     params: {
       kind: 'group',
       title: eventName,
@@ -504,35 +544,19 @@ if (groupId) {
     },
   });
 } else {
-  if (groupId) {
-  const tabs = navigation.getParent();
-
-  tabs?.navigate('Messages');
-
-  tabs?.dispatch(
-    CommonActions.navigate({
-      name: 'Messages',
-      params: {
-        screen: 'Conversation',
-        params: {
-          kind: 'group',
-          title: eventName,
-          memberIds: participantIds,
-          groupId,
-        },
-      },
-    })
-  );
-} else {
   Alert.alert('Event Created', 'Your event was saved!');
-  navigation.getParent()?.navigate('Home');
-}
   navigation.getParent()?.navigate('Home');
 }
 
 } catch (error) {
-    console.error('Failed to create event:', error);
-    Alert.alert('Error', 'Unable to save event. Please try again.');
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`Failed to save ${saveStage}:`, error);
+    Alert.alert(
+      'Could Not Save Event',
+      saveStage === 'event group'
+        ? `The event group could not be created. Check that everyone is still an accepted friend, then try again. (${detail})`
+        : `The event could not be saved. Please try again. (${detail})`
+    );
   } finally {
     setSavingEvent(false);
   }
