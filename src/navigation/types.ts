@@ -24,18 +24,35 @@ export type MainTabParamList = {
   Messages: undefined;
   CreateEvent: undefined;
   Calendar: undefined;
-  Profile: undefined;
+  // Allow opening a specific profile screen, or selecting the tab normally.
+  Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };
 
 export type MessagesStackParamList = {
   MessageList: undefined;
-  AddMembers: undefined;
-  Conversation: {
-    kind: 'friend' | 'group';
-    title: string;
-    memberIds: string[];
-    groupId?: string;
-  };
+  // No params creates a group; groupId adds friends to an existing conversation.
+  AddMembers: { groupId: string } | undefined;
+  // Pass only the ID so each screen can load the group's current data.
+  GroupOverview: { groupId: string };
+  GroupMembers: { groupId: string };
+  GroupSettings: { groupId: string };
+  // Open another member's profile within Messages so Back returns to its caller.
+  MemberProfile: { uid: string };
+  Conversation:
+  | {
+      kind: 'friend';
+      title: string;
+      memberIds: string[];
+      // Required ID for opening the direct conversation's message history.
+      directConversationId: string;
+    }
+  | {
+      kind: 'group';
+      title: string;
+      memberIds: string[];
+      // Required ID for opening the group's message history.
+      groupId: string;
+    };
 };
 
 export type AppStackParamList = {

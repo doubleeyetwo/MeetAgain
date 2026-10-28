@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   View,
+  type TextInputInstance,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -125,7 +126,7 @@ export function ProfileScreen() {
   const [searchError, setSearchError] = useState('');
   const searchSequence = useRef(0);
   const pendingProfileUid = useRef<string | null>(null);
-  const usernameInput = useRef<TextInput>(null);
+  const usernameInput = useRef<TextInputInstance>(null);
 
   // Queue navigation after the render that sets the search modal to hidden.
   useEffect(() => {

@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   View,
+  type TextInputInstance,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -24,7 +25,7 @@ type AuthNavigation = NativeStackNavigationProp<AuthStackParamList>;
 
 export function SignInScreen() {
   const navigation = useNavigation<AuthNavigation>();
-  const passwordInput = useRef<TextInput>(null);
+  const passwordInput = useRef<TextInputInstance>(null);
   const busyRef = useRef(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

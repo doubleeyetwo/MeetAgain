@@ -71,14 +71,14 @@ type SelectedEntry = {
 
 export function ReviewEventScreen({ navigation, route }: Props) {
   const {
-  eventName,
-  category,
-  startAt,
-  endAt,
-  eventPhoto: initialEventPhoto,
-  selectedMemberIds = [],
-} = route.params;
-
+    eventName,
+    category,
+    startAt,
+    endAt,
+    eventPhoto: initialEventPhoto,
+    selectedMemberIds = [],
+    location,
+  } = route.params;
   const eventTimes = {
     start: new Date(startAt),
     end: new Date(endAt),
@@ -564,7 +564,7 @@ Alert.alert('Event Created', `Event saved! ID: ${eventId}`);
                 color={colors.white}
               />
               <Text style={styles.eventInfoText}>
-                Location not selected
+                {location || 'Location not selected'}
               </Text>
             </View>
 

@@ -123,7 +123,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
   };
 
   const handleConfirmDetails = () => {
-    navigation.navigate('PickTime', {
+    navigation.navigate('PickLocation', {
       eventName: eventName.trim(),
       category: resolvedCategory,
       presetId: route.params?.presetId,

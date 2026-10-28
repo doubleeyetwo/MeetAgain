@@ -5,6 +5,7 @@ import { EventTemplatesScreen } from '@/features/events/screens/EventTemplatesSc
 import { CreateEventScreen } from '@/features/events/screens/CreateEventScreen';
 import { PickTimeScreen } from '@/features/events/screens/PickTimeScreen';
 import { SelectMembersScreen } from '@/features/events/screens/SelectMembersScreen';
+import { PickLocationScreen } from '@/features/events/screens/PickLocationScreen';
 import { ReviewEventScreen } from '@/features/events/screens/ReviewEventScreen';
 
 export type EventCreationStackParamList = {
@@ -22,6 +23,7 @@ export type EventCreationStackParamList = {
     category: string;
     presetId?: string;
     eventPhoto?: string | null;
+    location?: string;
   };
 
   SelectMembers: {
@@ -31,6 +33,17 @@ export type EventCreationStackParamList = {
     eventPhoto?: string | null;
     startAt: string;
     endAt: string;
+    location?: string;
+  };
+
+  PickLocation: {
+    eventName: string;
+    category: string;
+    presetId?: string;
+    eventPhoto?: string | null;
+    startAt?: string;
+    endAt?: string;
+    location?: string;
   };
 
   ReviewEvent: {
@@ -41,6 +54,7 @@ export type EventCreationStackParamList = {
     startAt: string;
     endAt: string;
     selectedMemberIds: string[];
+    location?: string;
   };
 };
 
@@ -68,6 +82,10 @@ export function EventCreationNavigator() {
       <Stack.Screen
         name="SelectMembers"
         component={SelectMembersScreen}
+      />
+      <Stack.Screen
+        name="PickLocation"
+        component={PickLocationScreen}
       />
       <Stack.Screen
         name="ReviewEvent"

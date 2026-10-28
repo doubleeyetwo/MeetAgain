@@ -55,6 +55,19 @@ export async function pickPhotoFromLibrary(): Promise<PickResult> {
   }
 }
 
+// Chat photos use the same compact JPEG normalization without cropping to a square.
+export async function pickChatPhotoFromLibrary(): Promise<PickResult> {
+  try {
+    return await toProfilePhoto(await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.7,
+    }));
+  } catch {
+    return { error: 'Could not open your photos. Please try again.' };
+  }
+}
+
 export async function takeProfilePhoto(): Promise<PickResult> {
   try {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
