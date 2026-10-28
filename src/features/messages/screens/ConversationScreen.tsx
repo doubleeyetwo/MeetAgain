@@ -16,6 +16,9 @@ import {
   watchGroupMessages,
   type GroupMessage,
 } from '../messages';
+import { sendGroupPoll } from '../polls';
+import { PollCreationModal } from '../PollCreationModal';
+import { PollMessageCard } from '../PollMessageCard';
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'Conversation'>;
 
@@ -30,6 +33,9 @@ export function ConversationScreen({ navigation, route }: Props) {
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
+  const canPostToGroup = kind === 'group' && !!groupId;
 
   useEffect(() => {
     let active = true;
@@ -120,6 +126,18 @@ export function ConversationScreen({ navigation, route }: Props) {
     }
   }
 
+  function openPollCreation() {
+    setAttachMenuOpen(false);
+    setPollOpen(true);
+  }
+
+  async function handlePostPoll(question: string, options: string[]) {
+    // PollCreationModal shows a thrown error and keeps the entered text.
+    if (!user) throw new Error('Sign in before posting a poll.');
+    if (!canPostToGroup) throw new Error('Polls are only available in group chats.');
+    await sendGroupPoll(groupId!, user.uid, question, options);
+  }
+
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
@@ -172,6 +190,14 @@ export function ConversationScreen({ navigation, route }: Props) {
                 // Compare identities to decide which side this message belongs on.
                 const isOwnMessage = message.senderId === user?.uid;
 
+                if (message.type === 'poll') {
+                  return (
+                    <View key={message.id} style={{ alignSelf: isOwnMessage ? 'flex-end' : 'flex-start' }}>
+                      <PollMessageCard poll={message} />
+                    </View>
+                  );
+                }
+
                 return (
                   <View
                     key={message.id}
@@ -205,12 +231,37 @@ export function ConversationScreen({ navigation, route }: Props) {
             {sendError}
           </Text>
         ) : null}
+        {attachMenuOpen ? (
+          <View style={styles.attachMenu}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Create a poll"
+              onPress={openPollCreation}
+              style={styles.attachMenuItem}
+            >
+              <Text style={styles.attachMenuText}>Create a Poll</Text>
+              <Ionicons name="bar-chart-outline" size={20} color={colors.white} />
+            </Pressable>
+          </View>
+        ) : null}
         {/* Keep the composer below the message area and error display. */}
         <View style={styles.composer}>
+          {canPostToGroup ? (
+            <Pressable
+              style={styles.attachButton}
+              accessibilityRole="button"
+              accessibilityLabel={attachMenuOpen ? 'Close message options' : 'Open message options'}
+              accessibilityState={{ expanded: attachMenuOpen }}
+              onPress={() => setAttachMenuOpen((open) => !open)}
+            >
+              <Ionicons name={attachMenuOpen ? 'close' : 'add'} size={24} color={colors.white} />
+            </Pressable>
+          ) : null}
           <TextInput
             style={styles.messageInput}
             value={draft}
             onChangeText={setDraft}
+            onFocus={() => setAttachMenuOpen(false)}
             placeholder="Message..."
             placeholderTextColor="rgba(244,241,247,0.65)"
             accessibilityLabel="Message"
@@ -234,6 +285,7 @@ export function ConversationScreen({ navigation, route }: Props) {
             )}
           </Pressable>
         </View>
+        <PollCreationModal visible={pollOpen} onClose={() => setPollOpen(false)} onPost={handlePostPoll} />
       </SafeAreaView>
     </LinearGradient>
   );
@@ -285,6 +337,32 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.4,
+  },
+  attachButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachMenu: {
+    // The menu sits just above the plus button, matching the Figma Messages Menu.
+    alignSelf: 'flex-start',
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 8,
+    backgroundColor: colors.cardDarker,
+  },
+  attachMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  attachMenuText: {
+    ...text.body,
+    color: colors.white,
   },
   messageBubble: {
     // Padding separates the text from the bubble's rounded edges.

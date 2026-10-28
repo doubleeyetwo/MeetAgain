@@ -293,6 +293,99 @@ service cloud.firestore {
           )
         );
     }
+    match /directConversations/{conversationId} {
+      // UIDs use the same alphabet and ordering as friendshipId() in the client.
+      // That makes the document ID a unique, unambiguous key for this pair.
+      function validPair(members) {
+        return members is list
+          && members.size() == 2
+          && members[0] is string && members[1] is string
+          && members[0].matches('^[A-Za-z0-9]{1,128}$')
+          && members[1].matches('^[A-Za-z0-9]{1,128}$')
+          && members[0] < members[1]
+          && conversationId == members[0] + '_' + members[1];
+      }
+
+      function callerClaimsCanonicalPair() {
+        let members = conversationId.split('_');
+        return conversationId.matches('^[A-Za-z0-9]{1,128}_[A-Za-z0-9]{1,128}$')
+          && members.size() == 2
+          && members[0] < members[1]
+          && request.auth.uid in members;
+      }
+
+      function acceptedPair(members) {
+        let pairPath = /databases/$(database)/documents/friendships/$(conversationId);
+        // Check existence first: a removed friendship must not authorize creation.
+        return existsAfter(pairPath)
+          && getAfter(pairPath).data.status == 'accepted'
+          && getAfter(pairPath).data.memberIds == members;
+      }
+
+      // The transaction reads the conversation before creating it. Only a
+      // participant may probe a missing canonical pair; existing history is
+      // readable by stored participants even after the friendship is removed.
+      allow get: if request.auth != null
+        && ((resource == null && callerClaimsCanonicalPair())
+          || (resource != null && request.auth.uid in resource.data.memberIds));
+      allow list: if request.auth != null
+        && request.auth.uid in resource.data.memberIds;
+
+      // The pair and creation time are fixed forever. A friendship must be
+      // accepted at commit time, including when writes are combined in a batch.
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['memberIds', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['memberIds', 'createdAt'])
+        && validPair(request.resource.data.memberIds)
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.createdAt == request.time
+        && acceptedPair(request.resource.data.memberIds);
+      allow update, delete: if false;
+
+      match /messages/{messageId} {
+        function conversationPath() {
+          return /databases/$(database)/documents/directConversations/$(conversationId);
+        }
+
+        function isParticipant() {
+          return request.auth != null
+            && exists(conversationPath())
+            && request.auth.uid in get(conversationPath()).data.memberIds;
+        }
+
+        function canSend() {
+          let pairPath = /databases/$(database)/documents/friendships/$(conversationId);
+          // History remains readable after unfriend, but every new send needs
+          // the same accepted pair stored on the conversation.
+          return existsAfter(pairPath)
+            && getAfter(pairPath).data.status == 'accepted'
+            && getAfter(pairPath).data.memberIds == get(conversationPath()).data.memberIds;
+        }
+
+        function validMessage() {
+          let message = request.resource.data;
+          return message.keys().hasAll(['senderId', 'text', 'createdAt'])
+            && message.keys().hasOnly(['senderId', 'text', 'imageDataUrl', 'createdAt'])
+            && message.senderId == request.auth.uid
+            && message.text is string
+            && message.text.size() <= 2000
+            && (
+              (message.text.size() > 0 && message.text.matches('[\\s\\S]*\\S[\\s\\S]*'))
+              || message.keys().hasAny(['imageDataUrl'])
+            )
+            && (!message.keys().hasAny(['imageDataUrl']) || (
+              message.imageDataUrl is string
+              && message.imageDataUrl.size() <= 200023
+              && message.imageDataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+            ))
+            && message.createdAt == request.time;
+        }
+
+        allow get, list: if isParticipant();
+        allow create: if isParticipant() && canSend() && validMessage();
+        allow update, delete: if false;
+      }
+    }
     // A canonical member-set claim gives every exact set one stable random group ID.
     // The creator is the first administrator; membership changes are not supported.
     match /groups/{groupId} {
@@ -342,10 +435,9 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && allSelectedFriends(request.resource.data)
-        && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.groupId == groupId
-        && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.memberIds == request.resource.data.memberIds
-        && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.createdBy == request.auth.uid
-        && request.resource.data.name == 'Group' + string(getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.memberIds.join('_'))).data.sequence);
+        // Each new group must match the creator's naming counter.
+        && getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.lastGroupId == groupId
+        && request.resource.data.name == 'Group' + string(getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.latestNumber);
       allow update: if request.auth != null
         && request.auth.uid in resource.data.adminIds
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt'])
@@ -353,6 +445,64 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 80
         && request.resource.data.updatedAt == request.time;
+      function validMemberRemoval() {
+        let before = resource.data.memberIds;
+        let after = request.resource.data.memberIds;
+        let removed = before.removeAll(after);
+
+        return request.auth != null
+          // The requester must belong to the group and remain afterward.
+          && request.auth.uid in before
+          && request.auth.uid in after
+          // Only membership and its timestamp may change.
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['memberIds', 'updatedAt'])
+          && after is list
+          && after.size() >= 1
+          && after.size() == before.size() - 1
+          // Exactly one existing member is removed; no additions or reordering.
+          && removed.size() == 1
+          && after == before.removeAll(removed)
+          // Every administrator must remain in the group.
+          && !removed.hasAny(resource.data.adminIds)
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      allow update: if validMemberRemoval();
+      function acceptedAddedFriend(memberId) {
+        let actorId = request.auth.uid;
+        let pairId = actorId < memberId ? actorId + '_' + memberId : memberId + '_' + actorId;
+        let pair = getAfter(/databases/$(database)/documents/friendships/$(pairId)).data;
+        return pair.status == 'accepted' && pair.memberIds.join('_') == pairId;
+      }
+
+      function validMemberAddition() {
+        let before = resource.data.memberIds;
+        let after = request.resource.data.memberIds;
+        let added = after.removeAll(before);
+        return request.auth != null
+          && request.auth.uid in before
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['memberIds', 'updatedAt'])
+          // The existing validator enforces sorted, unique UIDs and the ten-member cap.
+          && validMemberIds(request.resource.data)
+          && after.hasAll(before)
+          && after.size() > before.size()
+          && added.size() >= 1 && added.size() <= 9
+          // Check only new members against the requester, not the original creator.
+          && acceptedAddedFriend(added[0])
+          && (added.size() <= 1 || acceptedAddedFriend(added[1]))
+          && (added.size() <= 2 || acceptedAddedFriend(added[2]))
+          && (added.size() <= 3 || acceptedAddedFriend(added[3]))
+          && (added.size() <= 4 || acceptedAddedFriend(added[4]))
+          && (added.size() <= 5 || acceptedAddedFriend(added[5]))
+          && (added.size() <= 6 || acceptedAddedFriend(added[6]))
+          && (added.size() <= 7 || acceptedAddedFriend(added[7]))
+          && (added.size() <= 8 || acceptedAddedFriend(added[8]))
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      allow update: if validMemberAddition();
         match /messages/{messageId} {
           function isGroupMember() {
             return request.auth != null
@@ -363,55 +513,140 @@ service cloud.firestore {
             let message = request.resource.data;
 
             return message.keys().hasAll(['senderId', 'text', 'createdAt'])
-            && message.keys().hasOnly(['senderId', 'text', 'createdAt'])
+            && message.keys().hasOnly(['senderId', 'text', 'imageDataUrl', 'createdAt'])
             && message.senderId == request.auth.uid
             && message.text is string
-            && message.text.size() > 0
             && message.text.size() <= 2000
-            && message.text.matches('[\\s\\S]*\\S[\\s\\S]*')
+            && (
+              (message.text.size() > 0 && message.text.matches('[\\s\\S]*\\S[\\s\\S]*'))
+              || message.keys().hasAny(['imageDataUrl'])
+            )
+            && (!message.keys().hasAny(['imageDataUrl']) || (
+              message.imageDataUrl is string
+              && message.imageDataUrl.size() <= 200023
+              && message.imageDataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+            ))
             && message.createdAt == request.time;
           }
 
+          // Keep these limits in sync with src/features/messages/polls.ts.
+          function validPollOption(options, index) {
+            return options.size() <= index || (
+              options[index] is string
+              && options[index].size() > 0
+              && options[index].size() <= 80
+              && options[index].matches('[\\s\\S]*\\S[\\s\\S]*')
+            );
+          }
+
+          function validPoll() {
+            let poll = request.resource.data;
+
+            return poll.keys().hasAll(['senderId', 'type', 'question', 'options', 'createdAt'])
+            && poll.keys().hasOnly(['senderId', 'type', 'question', 'options', 'createdAt'])
+            && poll.senderId == request.auth.uid
+            && poll.type == 'poll'
+            && poll.question is string
+            && poll.question.size() > 0
+            && poll.question.size() <= 200
+            && poll.question.matches('[\\s\\S]*\\S[\\s\\S]*')
+            && poll.options is list
+            && poll.options.size() >= 2
+            && poll.options.size() <= 6
+            && poll.options.toSet().size() == poll.options.size()
+            && validPollOption(poll.options, 0)
+            && validPollOption(poll.options, 1)
+            && validPollOption(poll.options, 2)
+            && validPollOption(poll.options, 3)
+            && validPollOption(poll.options, 4)
+            && validPollOption(poll.options, 5)
+            && poll.createdAt == request.time;
+          }
+
           allow read: if isGroupMember();
-          allow create: if isGroupMember() && validMessage();
+          allow create: if isGroupMember() && (validMessage() || validPoll());
           allow update, delete: if false; //We can add editing and deleting messages as a stretch goal here
         }
     }
     match /groupMemberships/{memberKey} {
-      // Missing claims can be checked by prospective members during creation.
-      allow get: if request.auth != null && request.auth.uid in memberKey.split('_');
-      allow create: if request.auth != null
-        && request.resource.data.keys().hasAll(['groupId', 'memberIds', 'createdBy', 'sequence'])
-        && request.resource.data.keys().hasOnly(['groupId', 'memberIds', 'createdBy', 'sequence'])
-        && request.resource.data.memberIds is list
-        && request.resource.data.memberIds.join('_') == memberKey
-        && request.auth.uid in request.resource.data.memberIds
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.sequence is int
-        && request.resource.data.sequence > 0
-        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.memberIds == request.resource.data.memberIds
-        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.createdBy == request.auth.uid
-        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.name == 'Group' + string(request.resource.data.sequence)
-        && getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.latestNumber == request.resource.data.sequence
-        && getAfter(/databases/$(database)/documents/groupCounters/$(request.auth.uid)).data.lastMemberKey == memberKey;
+      // Retired uniqueness claims remain stored but are no longer used by clients.
+      allow read, write: if false;
     }
 
     match /groupCounters/{creatorId} {
       function validCounter() {
+        let data = request.resource.data;
+        let groupPath = /databases/$(database)/documents/groups/$(data.lastGroupId);
+
         return request.auth != null
           && request.auth.uid == creatorId
-          && request.resource.data.keys().hasAll(['latestNumber', 'lastMemberKey'])
-          && request.resource.data.keys().hasOnly(['latestNumber', 'lastMemberKey'])
-          && request.resource.data.latestNumber is int
-          && request.resource.data.latestNumber > 0
-          && request.resource.data.lastMemberKey is string
-          && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.lastMemberKey)).data.createdBy == creatorId
-          && getAfter(/databases/$(database)/documents/groupMemberships/$(request.resource.data.lastMemberKey)).data.sequence == request.resource.data.latestNumber;
+          && data.keys().hasAll(['latestNumber', 'lastGroupId'])
+          && data.keys().hasOnly(['latestNumber', 'lastGroupId'])
+          && data.latestNumber is int
+          && data.latestNumber > 0
+          && data.lastGroupId is string
+          && data.lastGroupId.matches('^[A-Za-z0-9]{20}$')
+          // The counter must point to a new group, not an existing conversation.
+          && !exists(groupPath)
+          && getAfter(groupPath).data.createdBy == creatorId
+          && getAfter(groupPath).data.name == 'Group' + string(data.latestNumber)
+          && getAfter(groupPath).data.createdAt == request.time;
       }
       allow get: if request.auth != null && request.auth.uid == creatorId;
       allow create: if validCounter() && request.resource.data.latestNumber == 1;
       allow update: if validCounter()
         && request.resource.data.latestNumber == resource.data.latestNumber + 1;
+    }
+    match /events/{eventId} {
+      function signedIn() {
+        return request.auth != null;
+      }
+      function isParticipant() {
+        return signedIn() && request.auth.uid in resource.data.participantIds;
+      }
+      function validParticipants(event) {
+        return event.participantIds is list
+          && event.participantIds.size() >= 1
+          && event.participantIds.size() <= 10
+          && request.auth.uid in event.participantIds
+          && event.participantIds.toSet().size() == event.participantIds.size();
+      }
+      function validGroup(event) {
+        return (event.get('groupId', null) == null
+          && event.participantIds == [request.auth.uid])
+          || (event.get('groupId', null) is string
+            && exists(/databases/$(database)/documents/groups/$(event.groupId))
+            && event.participantIds == get(/databases/$(database)/documents/groups/$(event.groupId)).data.memberIds);
+      }
+      function validEvent() {
+        let event = request.resource.data;
+        return event.keys().hasAll([
+          'creatorId', 'title', 'startAt', 'endAt', 'participantIds',
+          'status', 'createdAt', 'updatedAt'
+        ])
+          && event.keys().hasOnly([
+            'creatorId', 'title', 'description', 'location', 'startAt',
+            'endAt', 'participantIds', 'status', 'createdAt', 'updatedAt',
+            'category', 'groupId', 'photoURL', 'items', 'tasks', 'rsvps',
+            'reminderMinutesBefore'
+          ])
+          && event.creatorId == request.auth.uid
+          && event.title is string
+          && event.title.size() > 0
+          && event.title.size() <= 150
+          && event.startAt is timestamp
+          && event.endAt is timestamp
+          && event.endAt > event.startAt
+          && validParticipants(event)
+          && validGroup(event)
+          && event.status in ['draft', 'polling', 'confirmed', 'cancelled']
+          && event.createdAt == request.time
+          && event.updatedAt == request.time;
+      }
+      allow get, list: if isParticipant();
+      allow create: if signedIn() && validEvent();
+      // Editing and RSVP updates will be implemented separately.
+      allow update, delete: if false;
     }
     match /{document=**} {
       allow read, write: if false;
