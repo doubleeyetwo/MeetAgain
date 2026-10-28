@@ -270,7 +270,18 @@ export function ConversationScreen({ navigation, route }: Props) {
           <Pressable accessibilityRole="button" accessibilityLabel="Go back to messages" hitSlop={12} onPress={() => navigation.goBack()} style={styles.side}>
             <Ionicons name="chevron-back" size={25} color={colors.white} />
           </Pressable>
-          <Text numberOfLines={1} style={styles.title}>{title}</Text>
+          {groupId ? (
+            <Pressable
+              style={{ flex: 1 }}
+              accessibilityRole="button"
+              accessibilityLabel="Open group overview"
+              onPress={() => navigation.navigate('GroupOverview', { groupId })}
+            >
+              <Text numberOfLines={1} style={styles.title}>{title}</Text>
+            </Pressable>
+          ) : (
+            <Text numberOfLines={1} style={styles.title}>{title}</Text>
+          )}
           <View style={styles.side} />
         </View>
         {kind === 'group' ? (
