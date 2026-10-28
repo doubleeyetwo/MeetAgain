@@ -18,6 +18,9 @@ import {
   watchGroupMessages,
   type GroupMessage,
 } from '../messages';
+import { sendGroupPoll } from '../polls';
+import { PollCreationModal } from '../PollCreationModal';
+import { PollMessageCard } from '../PollMessageCard';
 import { sendDirectMessage, watchDirectMessages } from '../directMessages';
 import {
   watchDirectFriendship,
@@ -77,6 +80,8 @@ export function ConversationScreen({ navigation, route }: Props) {
 
   // Also block composition while signed out or while a message write is pending.
   const composerDisabled = !user || sending || directComposerDisabled;
+  const [pollOpen, setPollOpen] = useState(false);
+  const canPostToGroup = kind === 'group' && !!groupId;
 
   useEffect(() => {
     let active = true;
@@ -263,6 +268,18 @@ export function ConversationScreen({ navigation, route }: Props) {
     }
   }
 
+  function openPollCreation() {
+    setMenuOpen(false);
+    setPollOpen(true);
+  }
+
+  async function handlePostPoll(question: string, options: string[]) {
+    // PollCreationModal shows a thrown error and keeps the entered text.
+    if (!user) throw new Error('Sign in before posting a poll.');
+    if (!canPostToGroup) throw new Error('Polls are only available in group chats.');
+    await sendGroupPoll(groupId!, user.uid, question, options);
+  }
+
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
@@ -324,6 +341,14 @@ export function ConversationScreen({ navigation, route }: Props) {
                 // Compare identities to decide which side this message belongs on.
                 const isOwnMessage = message.senderId === user?.uid;
 
+                if (message.type === 'poll') {
+                  return (
+                    <View key={message.id} style={{ alignSelf: isOwnMessage ? 'flex-end' : 'flex-start' }}>
+                      <PollMessageCard poll={message} />
+                    </View>
+                  );
+                }
+
                 return (
                   <View
                     key={message.id}
@@ -362,16 +387,16 @@ export function ConversationScreen({ navigation, route }: Props) {
         ) : null}
         {menuOpen ? (
           <View style={styles.attachmentMenu}>
-            {kind === 'group' ? (
-              <View style={[styles.menuRow, styles.menuRowDisabled]} accessibilityState={{ disabled: true }}>
-                <Ionicons name="bar-chart-outline" size={22} color={colors.white} />
+            {/* Polls are stored with group messages, so direct chats only offer photos. */}
+            {canPostToGroup ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Create a poll" onPress={openPollCreation} disabled={composerDisabled || picking} style={styles.menuRow}>
                 <Text style={styles.menuText}>Create a Poll</Text>
-                <Text style={styles.menuHint}>Coming soon</Text>
-              </View>
+                <Ionicons name="bar-chart-outline" size={22} color={colors.white} />
+              </Pressable>
             ) : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Upload photo" onPress={() => { void handlePickPhoto(); }} disabled={composerDisabled || picking} style={styles.menuRow}>
-              <Ionicons name="camera-outline" size={22} color={colors.white} />
               <Text style={styles.menuText}>Upload Photo</Text>
+              <Ionicons name="camera-outline" size={22} color={colors.white} />
             </Pressable>
           </View>
         ) : null}
@@ -405,6 +430,7 @@ export function ConversationScreen({ navigation, route }: Props) {
             style={styles.messageInput}
             value={draft}
             onChangeText={setDraft}
+            onFocus={() => setMenuOpen(false)}
             placeholder="Message..."
             placeholderTextColor="rgba(244,241,247,0.65)"
             accessibilityLabel="Message"
@@ -428,6 +454,7 @@ export function ConversationScreen({ navigation, route }: Props) {
             )}
           </Pressable>
         </View>
+        <PollCreationModal visible={pollOpen} onClose={() => setPollOpen(false)} onPost={handlePostPoll} />
       </SafeAreaView>
       <Modal visible={fullscreenPhoto !== null} transparent onRequestClose={() => setFullscreenPhoto(null)} animationType="fade">
         <View style={styles.photoModal}>
@@ -503,9 +530,7 @@ const styles = StyleSheet.create({
   messageImage: { width: 200, maxWidth: '100%', height: 200, borderRadius: 12, marginBottom: 4 },
   attachmentMenu: { alignSelf: 'flex-start', width: 240, maxWidth: '90%', marginHorizontal: spacing.md, marginBottom: spacing.sm, padding: spacing.xs, borderRadius: 18, backgroundColor: colors.cardDarker },
   menuRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
-  menuRowDisabled: { opacity: 0.55 },
   menuText: { ...text.body, color: colors.white, flex: 1 },
-  menuHint: { ...text.body, color: colors.white, fontSize: 12 },
   attachmentPreview: { marginHorizontal: spacing.md, marginBottom: spacing.sm, padding: spacing.sm, borderRadius: 14, backgroundColor: colors.cardDarker, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   previewImage: { width: 42, height: 42, borderRadius: 8 },
   previewLabel: { ...text.body, color: colors.white, flex: 1 },

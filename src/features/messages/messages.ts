@@ -13,15 +13,28 @@ import { PROFILE_PHOTO_MAX_DATA_URL_LENGTH } from '@/features/auth/profilePhoto'
 
 export const MAX_MESSAGE_LENGTH = 2000;
 
-export type GroupMessage = {
+export type GroupTextMessage = {
   id: string;
   senderId: string;
+  type?: undefined;
   text: string;
   imageDataUrl?: string;
 
   // A local message can appear before Firestore resolves its server timestamp.
   createdAt: Timestamp | null;
 };
+
+// Written by sendGroupPoll in polls.ts.
+export type GroupPollMessage = {
+  id: string;
+  senderId: string;
+  type: 'poll';
+  question: string;
+  options: string[];
+  createdAt: Timestamp | null;
+};
+
+export type GroupMessage = GroupTextMessage | GroupPollMessage;
 
 export async function sendGroupMessage(
   groupId: string,
