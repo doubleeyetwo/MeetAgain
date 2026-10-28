@@ -118,6 +118,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   const [newPrice, setNewPrice] = useState('');
 
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
+  const [attendeePhotos, setAttendeePhotos] = useState<
+    Record<string, string | null>
+  >({});
 
   const [assignmentEntry, setAssignmentEntry] =
     useState<SelectedEntry | null>(null);
@@ -154,6 +157,41 @@ export function ReviewEventScreen({ navigation, route }: Props) {
       active = false;
     };
   }, [user]);
+
+  const attendeeIds = [...new Set([
+    ...(user?.uid ? [user.uid] : []),
+    ...selectedMemberIds,
+  ])];
+
+  useEffect(() => {
+    let active = true;
+
+    // Clear prior photos immediately when the selected attendees change.
+    setAttendeePhotos({});
+
+    const loadAttendees = async () => {
+      const otherIds = attendeeIds.filter((id) => id !== user?.uid);
+      const profiles = await Promise.all(otherIds.map(async (id) => {
+        try {
+          const snapshot = await getDoc(doc(db, 'publicProfiles', id));
+          const profile = snapshot.exists() ? snapshot.data() : null;
+          return [
+            id,
+            profile?.photoDataUrl ?? profile?.photoURL ?? null,
+          ] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }));
+
+      if (active) setAttendeePhotos(Object.fromEntries(profiles));
+    };
+
+    void loadAttendees();
+    return () => {
+      active = false;
+    };
+  }, [user?.uid, selectedMemberIds]);
 
   const myPhoto =
     myProfile?.photoDataUrl ??
@@ -689,6 +727,28 @@ if (directConversationId) {
             textAlignVertical="top"
           />
         </View>
+
+        <Text style={styles.sectionHeadingText}>Attendees</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.attendeeRow}
+          contentContainerStyle={styles.attendeeContent}
+          accessibilityLabel="Event attendees"
+        >
+          {attendeeIds.map((id) => {
+            const photo = id === user?.uid ? myPhoto : attendeePhotos[id];
+            return (
+              <View key={id} style={styles.attendeeAvatar}>
+                {photo ? (
+                  <Image source={{ uri: photo }} style={styles.attendeePhoto} />
+                ) : (
+                  <Ionicons name="person-outline" size={20} color={colors.white} />
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
 
         {/* REMINDER DROPDOWN */}
 
@@ -1267,6 +1327,32 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 16,
     textAlignVertical: 'top',
+  },
+
+  attendeeRow: {
+    marginTop: 10,
+    marginBottom: 18,
+  },
+
+  attendeeContent: {
+    gap: 10,
+    paddingHorizontal: 2,
+  },
+
+  attendeeAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primaryAccent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  attendeePhoto: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
 
   // REMINDER
