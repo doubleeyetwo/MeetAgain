@@ -18,7 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CompositeNavigationProp, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, Timestamp, where } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -34,7 +34,6 @@ type ProfileNavigation = CompositeNavigationProp<
 >;
 
 // Memory tiles are 104x93 at a 367pt frame width; keep the ratio and let the row divide the width.
-const TILE_ASPECT = 104 / 93;
 const TILE_RADIUS = 10;
 const GRID_GAP = 10;
 
@@ -59,7 +58,14 @@ function formatBirthday(iso?: string): string {
   return `${month} ${day}${suffix}, ${year}`;
 }
 
-type Memory = { id: string; photoUrl: string };
+type Memory = { id: string; title: string; photoUrl?: string | null };
+
+type ProfileEvent = {
+  id: string;
+  title: string;
+  startAt: Timestamp;
+  photoURL?: string | null;
+};
 
 function MemoriesGrid({ memories }: { memories: Memory[] }) {
   if (memories.length === 0) {
@@ -85,7 +91,15 @@ function MemoriesGrid({ memories }: { memories: Memory[] }) {
         <View key={rowIndex} style={styles.gridRow}>
           {row.map((memory, cellIndex) =>
             memory ? (
-              <Image key={memory.id} source={{ uri: memory.photoUrl }} style={styles.tile} />
+              <View key={memory.id} style={styles.tile}>
+                {memory.photoUrl ? (
+                  <Image source={{ uri: memory.photoUrl }} style={styles.tileImage} resizeMode="cover" />
+                ) : (
+                  <View style={styles.tileFallback}>
+                    <Text style={styles.tileTitle} numberOfLines={3}>{memory.title}</Text>
+                  </View>
+                )}
+              </View>
             ) : (
               <View key={`empty-${cellIndex}`} style={styles.tileSpacer} />
             ),
@@ -101,6 +115,8 @@ export function ProfileScreen() {
   const { user } = useAuth();
   const friendCount = useFriendCount(user?.uid, user?.uid);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [events, setEvents] = useState<ProfileEvent[]>([]);
+  const [eventsError, setEventsError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [usernameModalVisible, setUsernameModalVisible] = useState(false);
@@ -154,6 +170,38 @@ export function ProfileScreen() {
         active = false;
       };
     }, [user]),
+  );
+
+  // Refresh events when the Profile tab is focused, including after event creation.
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) {
+        setEvents([]);
+        return;
+      }
+      let active = true;
+      const loadEvents = async () => {
+        try {
+          setEventsError('');
+          const eventsQuery = query(
+            collection(db, 'events'),
+            where('participantIds', 'array-contains', user.uid),
+          );
+          const snapshot = await getDocs(eventsQuery);
+          const loadedEvents = snapshot.docs.map((eventDoc) => ({
+            id: eventDoc.id,
+            ...eventDoc.data(),
+          })) as ProfileEvent[];
+          loadedEvents.sort((a, b) => b.startAt.toMillis() - a.startAt.toMillis());
+          if (active) setEvents(loadedEvents);
+        } catch (eventError) {
+          console.error('Failed to load events:', eventError);
+          if (active) setEventsError('Could not load your events.');
+        }
+      };
+      void loadEvents();
+      return () => { active = false; };
+    }, [user?.uid]),
   );
 
   const birthday = formatBirthday(profile?.dateOfBirth);
@@ -341,7 +389,16 @@ export function ProfileScreen() {
                 <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
               ) : null}
 
-              <MemoriesGrid memories={[]} />
+              {eventsError ? (
+                <Text accessibilityRole="alert" style={styles.error}>{eventsError}</Text>
+              ) : null}
+              <MemoriesGrid
+                memories={events.map((event) => ({
+                  id: event.id,
+                  title: event.title,
+                  photoUrl: event.photoURL ?? null,
+                }))}
+              />
             </>
           )}
         </ScrollView>
@@ -448,7 +505,26 @@ const styles = StyleSheet.create({
     gap: GRID_GAP,
   },
   gridRow: { flexDirection: 'row', gap: GRID_GAP },
-  tile: { flex: 1, aspectRatio: TILE_ASPECT, borderRadius: TILE_RADIUS },
+  tile: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: TILE_RADIUS,
+    overflow: 'hidden',
+    backgroundColor: colors.cardDarker,
+  },
+  tileImage: { width: '100%', height: '100%' },
+  tileFallback: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.sm,
+  },
+  tileTitle: {
+    ...text.body,
+    color: colors.white,
+    fontSize: 13,
+    textAlign: 'center',
+  },
   tileSpacer: { flex: 1 },
   emptyMemories: {
     alignItems: 'center',

@@ -87,6 +87,13 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   const [eventPhoto, setEventPhoto] = useState<string | null>(
   initialEventPhoto ?? null
 );
+
+  const [eventPhotoDataUrl, setEventPhotoDataUrl] = useState<string | null>(
+  initialEventPhoto?.startsWith('data:image/jpeg;base64,')
+    ? initialEventPhoto
+    : null
+);
+
   const [photoLoading, setPhotoLoading] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
 
@@ -160,35 +167,36 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   // EVENT PHOTO FUNCTIONS
 
   const chooseEventPhoto = async (
-    source: 'camera' | 'library'
-  ) => {
-    if (photoLoading) return;
+  source: 'camera' | 'library'
+) => {
+  if (photoLoading) return;
 
-    setPhotoLoading(true);
+  setPhotoLoading(true);
 
-    try {
-      const result =
-        source === 'camera'
-          ? await takeProfilePhoto()
-          : await pickPhotoFromLibrary();
+  try {
+    const result =
+      source === 'camera'
+        ? await takeProfilePhoto()
+        : await pickPhotoFromLibrary();
 
-      if (result.error) {
-        Alert.alert('Photo Error', result.error);
-        return;
-      }
-
-      if (result.photo) {
-        setEventPhoto(result.photo.uri);
-      }
-    } catch {
-      Alert.alert(
-        'Photo Error',
-        'Unable to select your event photo. Please try again.'
-      );
-    } finally {
-      setPhotoLoading(false);
+    if (result.error) {
+      Alert.alert('Photo Error', result.error);
+      return;
     }
-  };
+
+    if (result.photo) {
+      setEventPhoto(result.photo.uri);
+      setEventPhotoDataUrl(result.photo.dataUrl);
+    }
+  } catch {
+    Alert.alert(
+      'Photo Error',
+      'Unable to select your event photo. Please try again.'
+    );
+  } finally {
+    setPhotoLoading(false);
+  }
+};
 
   const openPhotoOptions = () => {
     if (photoLoading) return;
@@ -215,7 +223,10 @@ export function ReviewEventScreen({ navigation, route }: Props) {
           ? [
               {
                 text: 'Remove Photo',
-                onPress: () => setEventPhoto(null),
+                onPress: () => {
+                  setEventPhoto(null);
+                  setEventPhotoDataUrl(null);
+                },
               },
             ]
           : []),
@@ -431,7 +442,14 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     </View>
   );
 
+  
+
   const handleConfirmEvent = async () => {
+  console.log('STEP 1: Confirm Event pressed', {
+    userId: user?.uid,
+    savingEvent,
+  });
+
   if (!user || savingEvent) return;
 
   try {
@@ -442,22 +460,31 @@ const participantIds = [...new Set([
   ...selectedMemberIds,
 ])].sort();
 
+console.log('EVENT PARTICIPANTS:', {
+  currentUser: user.uid,
+  selectedMemberIds,
+  participantIds,
+});
+
 let groupId: string | null = null;
 
 if (participantIds.length > 1) {
   const friendIds = participantIds.filter(
     (id) => id !== user.uid
   );
+  console.log('STEP 2: Creating or finding group');
 
   const group = await createGroup(user.uid, friendIds);
   groupId = group.id;
 }
 
+console.log('STEP 3: Saving event to Firestore');
 const eventId = await createEvent({
   creatorId: user.uid,
   title: eventName,
   category,
   description,
+  photoURL: eventPhotoDataUrl,
   startAt,
   endAt,
   groupId,
@@ -1010,8 +1037,7 @@ Alert.alert('Event Created', `Event saved! ID: ${eventId}`);
         </Pressable>
       </Modal>
     </View>
-  );
-}
+  );}
 
 function SectionHeading({
   title,
