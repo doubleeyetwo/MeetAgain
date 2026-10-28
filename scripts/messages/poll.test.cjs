@@ -310,19 +310,28 @@ function loadConversation({ kind, messages = [], sendGroupPoll = async () => {} 
     '@/config/firebase': { db: {} },
     '@/data/firestorePaths': { collections: { publicProfiles: 'publicProfiles' } },
     '@/features/auth/AuthContext': { useAuth: () => ({ user: { uid: 'alice' } }) },
+    '@/features/auth/profilePhoto': { pickChatPhotoFromLibrary: async () => ({}) },
     '@/theme': theme,
     '../messages': {
       sendGroupMessage: async () => {},
+      sendGroupPhoto: async () => {},
       watchGroupMessages: (_groupId, onChange) => { onChange(messages); return () => {}; },
     },
     '../polls': { sendGroupPoll },
     '../PollCreationModal': { PollCreationModal },
     '../PollMessageCard': { PollMessageCard },
+    '../directMessages': {
+      sendDirectMessage: async () => {},
+      watchDirectMessages: (_conversationId, onChange) => { onChange(messages); return () => {}; },
+    },
+    '@/features/messages/directConversations': {
+      watchDirectFriendship: (_uid, _otherUid, onChange) => { onChange(true); return () => {}; },
+    },
   });
-  const props = {
-    navigation: { goBack() {} },
-    route: { params: { kind, title: 'Group1', memberIds: ['alice', 'bob'], groupId: kind === 'group' ? 'group1' : undefined } },
-  };
+  const params = kind === 'group'
+    ? { kind, title: 'Group1', memberIds: ['alice', 'bob'], groupId: 'group1' }
+    : { kind, title: 'Bob', memberIds: ['alice', 'bob'], directConversationId: 'alice_bob' };
+  const props = { navigation: { goBack() {} }, route: { params } };
   return { render: () => hooks.render(exports.ConversationScreen, props), PollCreationModal, PollMessageCard };
 }
 
@@ -337,12 +346,14 @@ test('the plus menu opens poll creation and posted polls show in the group chat'
   assert.equal(find(tree, ui.PollCreationModal).props.visible, false);
   assert.equal(button(tree, 'Create a poll'), undefined);
 
-  button(tree, 'Open message options').props.onPress();
+  button(tree, 'Add attachment').props.onPress();
   tree = ui.render();
+  assert.ok(button(tree, 'Upload photo'));
   button(tree, 'Create a poll').props.onPress();
   tree = ui.render();
   assert.equal(find(tree, ui.PollCreationModal).props.visible, true);
   assert.equal(button(tree, 'Create a poll'), undefined);
+  assert.equal(button(tree, 'Upload photo'), undefined);
 
   await find(tree, ui.PollCreationModal).props.onPost('Party Theme', ['Masquerade', 'Great Gatsby']);
   assert.deepEqual(sent, [['group1', 'alice', 'Party Theme', ['Masquerade', 'Great Gatsby']]]);
@@ -352,8 +363,13 @@ test('the plus menu opens poll creation and posted polls show in the group chat'
   assert.equal(find(tree, ui.PollCreationModal).props.visible, false);
 });
 
-test('friend chats do not offer poll creation', () => {
+test('friend chats offer photos but not polls in the plus menu', () => {
   const ui = loadConversation({ kind: 'friend' });
-  const tree = ui.render();
-  assert.equal(button(tree, 'Open message options'), undefined);
+  ui.render();
+  let tree = ui.render();
+
+  button(tree, 'Add attachment').props.onPress();
+  tree = ui.render();
+  assert.ok(button(tree, 'Upload photo'));
+  assert.equal(button(tree, 'Create a poll'), undefined);
 });

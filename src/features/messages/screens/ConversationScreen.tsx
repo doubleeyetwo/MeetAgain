@@ -80,7 +80,6 @@ export function ConversationScreen({ navigation, route }: Props) {
 
   // Also block composition while signed out or while a message write is pending.
   const composerDisabled = !user || sending || directComposerDisabled;
-  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const canPostToGroup = kind === 'group' && !!groupId;
 
@@ -270,19 +269,7 @@ export function ConversationScreen({ navigation, route }: Props) {
   }
 
   function openPollCreation() {
-    setAttachMenuOpen(false);
-    setPollOpen(true);
-  }
-
-  async function handlePostPoll(question: string, options: string[]) {
-    // PollCreationModal shows a thrown error and keeps the entered text.
-    if (!user) throw new Error('Sign in before posting a poll.');
-    if (!canPostToGroup) throw new Error('Polls are only available in group chats.');
-    await sendGroupPoll(groupId!, user.uid, question, options);
-  }
-
-  function openPollCreation() {
-    setAttachMenuOpen(false);
+    setMenuOpen(false);
     setPollOpen(true);
   }
 
@@ -387,31 +374,18 @@ export function ConversationScreen({ navigation, route }: Props) {
             {sendError}
           </Text>
         ) : null}
-        {attachMenuOpen ? (
-          <View style={styles.attachMenu}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Create a poll"
-              onPress={openPollCreation}
-              style={styles.attachMenuItem}
-            >
-              <Text style={styles.attachMenuText}>Create a Poll</Text>
-              <Ionicons name="bar-chart-outline" size={20} color={colors.white} />
-            </Pressable>
-          </View>
-        ) : null}
         {menuOpen ? (
           <View style={styles.attachmentMenu}>
-            {kind === 'group' ? (
-              <View style={[styles.menuRow, styles.menuRowDisabled]} accessibilityState={{ disabled: true }}>
-                <Ionicons name="bar-chart-outline" size={22} color={colors.white} />
+            {/* Polls are stored with group messages, so direct chats only offer photos. */}
+            {canPostToGroup ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Create a poll" onPress={openPollCreation} disabled={composerDisabled || picking} style={styles.menuRow}>
                 <Text style={styles.menuText}>Create a Poll</Text>
-                <Text style={styles.menuHint}>Coming soon</Text>
-              </View>
+                <Ionicons name="bar-chart-outline" size={22} color={colors.white} />
+              </Pressable>
             ) : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Upload photo" onPress={() => { void handlePickPhoto(); }} disabled={composerDisabled || picking} style={styles.menuRow}>
-              <Ionicons name="camera-outline" size={22} color={colors.white} />
               <Text style={styles.menuText}>Upload Photo</Text>
+              <Ionicons name="camera-outline" size={22} color={colors.white} />
             </Pressable>
           </View>
         ) : null}
@@ -438,17 +412,6 @@ export function ConversationScreen({ navigation, route }: Props) {
           </Text>
         ) : null}
         <View style={styles.composer}>
-          {canPostToGroup ? (
-            <Pressable
-              style={styles.attachButton}
-              accessibilityRole="button"
-              accessibilityLabel={attachMenuOpen ? 'Close message options' : 'Open message options'}
-              accessibilityState={{ expanded: attachMenuOpen }}
-              onPress={() => setAttachMenuOpen((open) => !open)}
-            >
-              <Ionicons name={attachMenuOpen ? 'close' : 'add'} size={24} color={colors.white} />
-            </Pressable>
-          ) : null}
           <Pressable accessibilityRole="button" accessibilityLabel={menuOpen ? 'Close attachment menu' : 'Add attachment'} onPress={() => setMenuOpen(!menuOpen)} disabled={composerDisabled || picking} style={styles.addButton}>
             <Ionicons name={menuOpen ? 'close' : 'add'} size={25} color={colors.white} />
           </Pressable>
@@ -456,7 +419,7 @@ export function ConversationScreen({ navigation, route }: Props) {
             style={styles.messageInput}
             value={draft}
             onChangeText={setDraft}
-            onFocus={() => setAttachMenuOpen(false)}
+            onFocus={() => setMenuOpen(false)}
             placeholder="Message..."
             placeholderTextColor="rgba(244,241,247,0.65)"
             accessibilityLabel="Message"
@@ -543,32 +506,6 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     opacity: 0.4,
   },
-  attachButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  attachMenu: {
-    // The menu sits just above the plus button, matching the Figma Messages Menu.
-    alignSelf: 'flex-start',
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: 8,
-    backgroundColor: colors.cardDarker,
-  },
-  attachMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  attachMenuText: {
-    ...text.body,
-    color: colors.white,
-  },
   messageBubble: {
     // Padding separates the text from the bubble's rounded edges.
     paddingHorizontal: 12,
@@ -582,9 +519,7 @@ const styles = StyleSheet.create({
   messageImage: { width: 200, maxWidth: '100%', height: 200, borderRadius: 12, marginBottom: 4 },
   attachmentMenu: { alignSelf: 'flex-start', width: 240, maxWidth: '90%', marginHorizontal: spacing.md, marginBottom: spacing.sm, padding: spacing.xs, borderRadius: 18, backgroundColor: colors.cardDarker },
   menuRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
-  menuRowDisabled: { opacity: 0.55 },
   menuText: { ...text.body, color: colors.white, flex: 1 },
-  menuHint: { ...text.body, color: colors.white, fontSize: 12 },
   attachmentPreview: { marginHorizontal: spacing.md, marginBottom: spacing.sm, padding: spacing.sm, borderRadius: 14, backgroundColor: colors.cardDarker, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   previewImage: { width: 42, height: 42, borderRadius: 8 },
   previewLabel: { ...text.body, color: colors.white, flex: 1 },
