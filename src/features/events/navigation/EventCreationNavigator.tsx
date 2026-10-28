@@ -19,6 +19,7 @@ export type EventCreationStackParamList = {
     eventName: string;
     category: string;
     presetId?: string;
+    location?: string;
   };
 
   PickLocation: {

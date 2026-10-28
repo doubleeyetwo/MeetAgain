@@ -79,7 +79,7 @@ export function PickLocationScreen({
       return;
     }
 
-    navigation.navigate('ReviewEvent', {
+    navigation.navigate('PickTime', {
       eventName: route.params.eventName,
       category: route.params.category,
       presetId: route.params.presetId,
