@@ -1,7 +1,10 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocsFromServer,
+  limit,
   onSnapshot,
   query,
   runTransaction,
@@ -9,6 +12,7 @@ import {
   Timestamp,
   type Transaction,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { friendshipId } from '@/features/friends/friendships';
@@ -25,6 +29,7 @@ const GROUP_PHOTO_DATA_URL_PATTERN = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/
 
 export type Group = {
   photoDataUrl?: string;
+  deleting?: boolean;
   id: string;
   name: string;
   memberIds: string[];
@@ -147,6 +152,7 @@ export async function updateGroupSettings(
     if (!group.memberIds.includes(actorUid)) {
       throw new Error('You are not part of this group.');
     }
+    if (group.deleting) throw new Error('This group is being deleted.');
 
     // Include only supplied settings so a photo-only update cannot overwrite the name.
     transaction.update(groupRef, { ...update, updatedAt: serverTimestamp() });
@@ -177,6 +183,7 @@ export async function addGroupMembers(
     if (!snapshot.exists()) throw new Error('This group is unavailable.');
     const group = snapshot.data() as Omit<Group, 'id'>;
     if (!group.memberIds.includes(actorUid)) throw new Error('You are not part of this group.');
+    if (group.deleting) throw new Error('This group is being deleted.');
     if (friendUids.some((uid) => group.memberIds.includes(uid))) {
       throw new Error('A selected person is already a member. Refresh and try again.');
     }
@@ -213,6 +220,7 @@ export async function removeGroupMember(
     if (!group.memberIds.includes(actorUid)) {
       throw new Error('You are not part of this group.');
     }
+    if (group.deleting) throw new Error('This group is being deleted.');
 
     if (memberUid === actorUid) {
       throw new Error('Cannot kick yourself from group please use the leave function.');
@@ -237,6 +245,56 @@ export async function removeGroupMember(
       updatedAt: serverTimestamp(),
     });
   });
+}
+
+// Leaving changes only the caller's membership. The creator stays to own the group and its history.
+export async function leaveGroup(groupId: string, actorUid: string): Promise<void> {
+  const groupRef = doc(db, 'groups', groupId);
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(groupRef);
+    if (!snapshot.exists()) throw new Error('This group is unavailable.');
+    const group = snapshot.data() as Omit<Group, 'id'>;
+    if (group.deleting) throw new Error('This group is being deleted.');
+    if (!group.memberIds.includes(actorUid)) throw new Error('You are not part of this group.');
+    if (group.createdBy === actorUid) throw new Error('The creator can delete the group instead.');
+    transaction.update(groupRef, {
+      memberIds: group.memberIds.filter((uid) => uid !== actorUid),
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function deleteGroup(groupId: string, actorUid: string): Promise<void> {
+  const groupRef = doc(db, 'groups', groupId);
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(groupRef);
+    if (!snapshot.exists()) throw new Error('This group is unavailable.');
+    const group = snapshot.data() as Omit<Group, 'id'>;
+    if (group.createdBy !== actorUid || !group.memberIds.includes(actorUid)) {
+      throw new Error('Only the group creator can delete this group.');
+    }
+    // A failed cleanup can be retried without reopening writes to the group.
+    if (!group.deleting) transaction.update(groupRef, { deleting: true, updatedAt: serverTimestamp() });
+  });
+
+  // Current group data lives in messages and top-level events. Drain bounded batches before
+  // removing the parent; Firestore does not cascade subcollection deletes.
+  const messagesRef = collection(groupRef, 'messages');
+  const eventsRef = collection(db, 'events');
+  for (const source of [
+    query(messagesRef, limit(200)),
+    query(eventsRef, where('groupId', '==', groupId), limit(200)),
+  ]) {
+    for (;;) {
+      const snapshot = await getDocsFromServer(source);
+      if (snapshot.empty) break;
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((item) => batch.delete(item.ref));
+      await batch.commit();
+    }
+  }
+  // Counters and retired membership claims have independent lifetimes and are not group content.
+  await deleteDoc(groupRef);
 }
 
 // Listen to one group's current data and return Firestore's cleanup function.

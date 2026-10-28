@@ -22,6 +22,7 @@ import { sendGroupPoll } from '../polls';
 import { PollCreationModal } from '../PollCreationModal';
 import { PollMessageCard } from '../PollMessageCard';
 import { sendDirectMessage, watchDirectMessages } from '../directMessages';
+import { watchGroup } from '../groups';
 import {
   watchDirectFriendship,
 } from '@/features/messages/directConversations';
@@ -49,6 +50,7 @@ export function ConversationScreen({ navigation, route }: Props) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
   const sendLock = useRef(false);
   const pickLock = useRef(false);
+  const groupRedirecting = useRef(false);
   const active = useRef(true);
   const conversationKey = `${kind}:${groupId ?? directConversationId ?? ''}:${user?.uid ?? ''}`;
   const currentConversation = useRef(conversationKey);
@@ -56,6 +58,46 @@ export function ConversationScreen({ navigation, route }: Props) {
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [pollOpen, setPollOpen] = useState(false);
+  const canPostToGroup = kind === 'group' && !!groupId;
+  const [groupAccess, setGroupAccess] = useState<{ key: string; state: 'checking' | 'ready' | 'cleanup' | 'unavailable' }>({ key: conversationKey, state: 'checking' });
+  const groupReady = kind !== 'group' || (groupAccess.key === conversationKey && groupAccess.state === 'ready');
+
+  useEffect(() => {
+    if (kind !== 'group' || !groupId || !user) return;
+    const key = conversationKey;
+    let subscribed = true;
+    groupRedirecting.current = false;
+    setGroupAccess({ key, state: 'checking' });
+    const redirect = (state: 'cleanup' | 'unavailable') => {
+      if (!subscribed) return;
+      setGroupAccess({ key, state });
+      setPollOpen(false);
+      setMenuOpen(false);
+      if (navigation.isFocused() && !groupRedirecting.current) {
+        groupRedirecting.current = true;
+        if (state === 'cleanup') navigation.replace('GroupSettings', { groupId });
+        else navigation.popToTop();
+      }
+    };
+    const unsubscribe = watchGroup(groupId, (nextGroup) => {
+      if (!subscribed) return;
+      if (!nextGroup || !nextGroup.memberIds.includes(user.uid)) redirect('unavailable');
+      else if (nextGroup.deleting) redirect(nextGroup.createdBy === user.uid ? 'cleanup' : 'unavailable');
+      else setGroupAccess({ key, state: 'ready' });
+    }, () => redirect('unavailable'));
+    return () => { subscribed = false; unsubscribe(); };
+  }, [kind, groupId, user?.uid, conversationKey, navigation]);
+
+  useEffect(() => navigation.addListener('focus', () => {
+    if (kind === 'group' && groupId && groupAccess.key === conversationKey
+      && (groupAccess.state === 'cleanup' || groupAccess.state === 'unavailable')
+      && !groupRedirecting.current) {
+      groupRedirecting.current = true;
+      if (groupAccess.state === 'cleanup') navigation.replace('GroupSettings', { groupId });
+      else navigation.popToTop();
+    }
+  }), [kind, groupId, groupAccess, conversationKey, navigation]);
 
   useEffect(() => {
     active.current = true;
@@ -79,9 +121,7 @@ export function ConversationScreen({ navigation, route }: Props) {
     (friendshipLoading || friendshipError !== null || !friendshipAccepted);
 
   // Also block composition while signed out or while a message write is pending.
-  const composerDisabled = !user || sending || directComposerDisabled;
-  const [pollOpen, setPollOpen] = useState(false);
-  const canPostToGroup = kind === 'group' && !!groupId;
+  const composerDisabled = !user || sending || directComposerDisabled || !groupReady;
 
   useEffect(() => {
     let active = true;
@@ -226,6 +266,10 @@ export function ConversationScreen({ navigation, route }: Props) {
       );
       return;
     }
+    if (!groupReady) {
+      setSendError('This group is unavailable.');
+      return;
+    }
 
     sendLock.current = true;
     const startedIn = currentConversation.current;
@@ -277,6 +321,7 @@ export function ConversationScreen({ navigation, route }: Props) {
     // PollCreationModal shows a thrown error and keeps the entered text.
     if (!user) throw new Error('Sign in before posting a poll.');
     if (!canPostToGroup) throw new Error('Polls are only available in group chats.');
+    if (!groupReady) throw new Error('This group is unavailable.');
     await sendGroupPoll(groupId!, user.uid, question, options);
   }
 
@@ -292,6 +337,7 @@ export function ConversationScreen({ navigation, route }: Props) {
               style={{ flex: 1 }}
               accessibilityRole="button"
               accessibilityLabel="Open group overview"
+              disabled={!groupReady}
               onPress={() => navigation.navigate('GroupOverview', { groupId })}
             >
               <Text numberOfLines={1} style={styles.title}>{title}</Text>

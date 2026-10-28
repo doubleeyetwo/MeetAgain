@@ -387,7 +387,7 @@ service cloud.firestore {
       }
     }
     // A canonical member-set claim gives every exact set one stable random group ID.
-    // The creator is the first administrator; membership changes are not supported.
+    // The creator remains the administrator and owns group deletion.
     match /groups/{groupId} {
       function validMemberIds(data) {
         let members = data.memberIds;
@@ -441,6 +441,7 @@ service cloud.firestore {
       allow update: if request.auth != null
         // Any current member may rename or upload a JPEG group photo.
         && request.auth.uid in resource.data.memberIds
+        && resource.data.get('deleting', false) == false
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoDataUrl', 'updatedAt'])
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
@@ -460,6 +461,7 @@ service cloud.firestore {
         let removed = before.removeAll(after);
 
         return request.auth != null
+          && resource.data.get('deleting', false) == false
           // The requester must belong to the group and remain afterward.
           && request.auth.uid in before
           && request.auth.uid in after
@@ -478,6 +480,30 @@ service cloud.firestore {
       }
 
       allow update: if validMemberRemoval();
+      function validSelfLeave() {
+        let before = resource.data.memberIds;
+        let after = request.resource.data.memberIds;
+        return request.auth != null
+          && resource.data.get('deleting', false) == false
+          && request.auth.uid in before
+          && request.auth.uid != resource.data.createdBy
+          && !(request.auth.uid in resource.data.adminIds)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'updatedAt'])
+          && after == before.removeAll([request.auth.uid])
+          && after.size() == before.size() - 1
+          && request.resource.data.updatedAt == request.time;
+      }
+      allow update: if validSelfLeave();
+      allow update: if request.auth != null
+        && request.auth.uid == resource.data.createdBy
+        && request.auth.uid in resource.data.memberIds
+        && resource.data.get('deleting', false) == false
+        && request.resource.data.deleting == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleting', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if request.auth != null
+        && request.auth.uid == resource.data.createdBy
+        && resource.data.deleting == true;
       function acceptedAddedFriend(memberId) {
         let actorId = request.auth.uid;
         let pairId = actorId < memberId ? actorId + '_' + memberId : memberId + '_' + actorId;
@@ -490,6 +516,7 @@ service cloud.firestore {
         let after = request.resource.data.memberIds;
         let added = after.removeAll(before);
         return request.auth != null
+          && resource.data.get('deleting', false) == false
           && request.auth.uid in before
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['memberIds', 'updatedAt'])
@@ -516,6 +543,9 @@ service cloud.firestore {
           function isGroupMember() {
             return request.auth != null
             && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+          }
+          function groupDeleting() {
+            return get(/databases/$(database)/documents/groups/$(groupId)).data.get('deleting', false) == true;
           }
 
           function validMessage() {
@@ -573,8 +603,12 @@ service cloud.firestore {
           }
 
           allow read: if isGroupMember();
-          allow create: if isGroupMember() && (validMessage() || validPoll());
-          allow update, delete: if false; //We can add editing and deleting messages as a stretch goal here
+          allow create: if isGroupMember()
+            && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.get('deleting', false) == false
+            && (validMessage() || validPoll());
+          allow update: if false;
+          allow delete: if isGroupMember() && groupDeleting()
+            && request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy;
         }
     }
     match /groupMemberships/{memberKey} {
@@ -613,6 +647,13 @@ service cloud.firestore {
       function isParticipant() {
         return signedIn() && request.auth.uid in resource.data.participantIds;
       }
+      function isDeletingGroupOwner() {
+        return signedIn()
+          && resource.data.get('groupId', null) is string
+          && exists(/databases/$(database)/documents/groups/$(resource.data.groupId))
+          && get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.deleting == true
+          && get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.createdBy == request.auth.uid;
+      }
       function validParticipants(event) {
         return event.participantIds is list
           && event.participantIds.size() >= 1
@@ -624,8 +665,9 @@ service cloud.firestore {
         return (event.get('groupId', null) == null
           && event.participantIds == [request.auth.uid])
           || (event.get('groupId', null) is string
-            && exists(/databases/$(database)/documents/groups/$(event.groupId))
-            && event.participantIds == get(/databases/$(database)/documents/groups/$(event.groupId)).data.memberIds);
+            && existsAfter(/databases/$(database)/documents/groups/$(event.groupId))
+            && getAfter(/databases/$(database)/documents/groups/$(event.groupId)).data.get('deleting', false) == false
+            && event.participantIds == getAfter(/databases/$(database)/documents/groups/$(event.groupId)).data.memberIds);
       }
       function validEvent() {
         let event = request.resource.data;
@@ -652,10 +694,11 @@ service cloud.firestore {
           && event.createdAt == request.time
           && event.updatedAt == request.time;
       }
-      allow get, list: if isParticipant();
+      allow get, list: if isParticipant() || isDeletingGroupOwner();
       allow create: if signedIn() && validEvent();
       // Editing and RSVP updates will be implemented separately.
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isDeletingGroupOwner();
     }
     match /{document=**} {
       allow read, write: if false;

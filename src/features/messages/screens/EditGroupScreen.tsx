@@ -7,7 +7,7 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { colors } from '@/theme';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/features/auth/AuthContext';
-import { updateGroupSettings, watchGroup, type Group } from '@/features/messages/groups';
+import { deleteGroup, leaveGroup, updateGroupSettings, watchGroup, type Group } from '@/features/messages/groups';
 import type { ProfilePhoto } from '@/features/auth/AuthContext';
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'GroupSettings'>;
@@ -34,6 +34,8 @@ export function EditGroupScreen({ navigation, route }: Props) {
   // State controls the button label and visible failure message.
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [groupAction, setGroupAction] = useState<'leave' | 'delete' | null>(null);
+  const [actionError, setActionError] = useState('');
 
   // The ref blocks a second submission before React updates the button.
   const saveBusy = useRef(false);
@@ -57,6 +59,8 @@ export function EditGroupScreen({ navigation, route }: Props) {
       setGroup(null);
       setError('');
       setSaveError('');
+      setGroupAction(null);
+      setActionError('');
       setLoading(true);
       setDraftName('');
       // A photo selected for the previous account or group must not carry over.
@@ -127,6 +131,7 @@ export function EditGroupScreen({ navigation, route }: Props) {
     error === '' &&
     uid &&
     group?.memberIds.includes(uid) &&
+    !group?.deleting &&
     nameError === '' &&
     (nameChanged || photoChanged),
   );
@@ -147,6 +152,7 @@ export function EditGroupScreen({ navigation, route }: Props) {
       return mounted.current
         && screenVersion.current === operationVersion
         && current.group?.memberIds.includes(actorUid)
+        && !current.group?.deleting
         && current.uid === actorUid
         && current.groupId === operationGroupId;
     }
@@ -190,7 +196,7 @@ export function EditGroupScreen({ navigation, route }: Props) {
   }
 
   async function handlePickPhoto(source: 'library' | 'camera') {
-    if (photoPickBusy.current || saveBusy.current || !uid || !group?.memberIds.includes(uid)) return;
+    if (photoPickBusy.current || saveBusy.current || !uid || !group?.memberIds.includes(uid) || group.deleting) return;
     const actorUid = uid;
     const operationGroupId = groupId;
     const operationVersion = screenVersion.current;
@@ -204,7 +210,7 @@ export function EditGroupScreen({ navigation, route }: Props) {
       // Ignore results if the account, group, or membership changed while picking.
       if (!mounted.current || screenVersion.current !== operationVersion
         || current.uid !== actorUid || current.groupId !== operationGroupId
-        || !current.group?.memberIds.includes(actorUid)) return;
+        || !current.group?.memberIds.includes(actorUid) || current.group.deleting) return;
       if (result.error) setPhotoError(result.error);
       if (result.photo) {
         setDraftPhoto(result.photo);
@@ -233,10 +239,70 @@ export function EditGroupScreen({ navigation, route }: Props) {
     ]);
   }
 
-  // Archiving remains a separate group-management step.
+  function confirmGroupAction() {
+    if (saveBusy.current || photoPickBusy.current || !uid || !group?.memberIds.includes(uid)) return;
+    const actorUid = uid;
+    const operationGroupId = groupId;
+    const operationVersion = screenVersion.current;
+    const action = group.createdBy === actorUid ? 'delete' : 'leave';
+    if (action === 'leave' && group.deleting) return;
+
+    function isCurrentScreen() {
+      const current = currentScreen.current;
+      return mounted.current && screenVersion.current === operationVersion
+        && current.uid === actorUid && current.groupId === operationGroupId
+        && current.group?.memberIds.includes(actorUid)
+        && (action === 'delete' ? current.group.createdBy === actorUid
+          : current.group.createdBy !== actorUid && !current.group.deleting);
+    }
+
+    saveBusy.current = true;
+    setGroupAction(action);
+    setActionError('');
+    const cancel = () => {
+      saveBusy.current = false;
+      if (isCurrentScreen()) setGroupAction(null);
+    };
+    const proceed = async () => {
+      if (!isCurrentScreen()) { cancel(); return; }
+      try {
+        if (action === 'delete') await deleteGroup(operationGroupId, actorUid);
+        else await leaveGroup(operationGroupId, actorUid);
+        // The group listener may already have lost read access; use the captured route identity.
+        if (mounted.current && screenVersion.current === operationVersion
+          && currentScreen.current.uid === actorUid && currentScreen.current.groupId === operationGroupId) {
+          navigation.popToTop();
+        }
+      } catch (reason) {
+        if (isCurrentScreen()) {
+          setActionError(reason instanceof Error ? reason.message : `Could not ${action} group. Try again.`);
+        }
+      } finally {
+        saveBusy.current = false;
+        if (mounted.current) setGroupAction(null);
+      }
+    };
+    const title = action === 'delete' ? 'Delete Group' : 'Leave Group';
+    const message = action === 'delete'
+      ? 'Delete this group and all its messages, photos, polls, and linked events for everyone?'
+      : 'Leave this group? You will lose access to its conversation.';
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm(message)) void proceed();
+      else cancel();
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel', onPress: cancel },
+      { text: title, style: 'destructive', onPress: () => void proceed() },
+    ], { cancelable: false });
+  }
+
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="Group Settings" onBack={() => navigation.goBack()} />
+      <ScreenHeader title="Group Settings" onBack={() => {
+        if (group?.deleting && group.createdBy === uid) navigation.popToTop();
+        else navigation.goBack();
+      }} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {loading ? (
           <Text style={styles.body}>Loading group settings...</Text>
@@ -258,8 +324,8 @@ export function EditGroupScreen({ navigation, route }: Props) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Change group photo"
-              accessibilityState={{ disabled: saving || pickingPhoto, busy: pickingPhoto }}
-              disabled={saving || pickingPhoto}
+              accessibilityState={{ disabled: saving || pickingPhoto || groupAction !== null || !!group.deleting, busy: pickingPhoto }}
+              disabled={saving || pickingPhoto || groupAction !== null || !!group.deleting}
               onPress={choosePhoto}
               style={styles.photoButton}
             >
@@ -276,7 +342,7 @@ export function EditGroupScreen({ navigation, route }: Props) {
             <TextInput
               accessibilityLabel="Group name"
               value={draftName}
-              editable={!saving}
+              editable={!saving && groupAction === null && !group.deleting}
               onChangeText={(value) => {
                 setSaveError('');
                 // Mark editing immediately so a snapshot cannot overwrite typing.
@@ -299,17 +365,37 @@ export function EditGroupScreen({ navigation, route }: Props) {
             <Pressable
               accessibilityRole="button"
               accessibilityState={{
-                disabled: !readyToSave || saving || pickingPhoto,
+                disabled: !readyToSave || saving || pickingPhoto || groupAction !== null,
                 busy: saving,
               }}
-              disabled={!readyToSave || saving || pickingPhoto}
+              disabled={!readyToSave || saving || pickingPhoto || groupAction !== null}
               onPress={() => void handleSave()}
-              style={[styles.saveButton, (!readyToSave || saving || pickingPhoto) && styles.disabled]}
+              style={[styles.saveButton, (!readyToSave || saving || pickingPhoto || groupAction !== null) && styles.disabled]}
             >
               <Text style={styles.body}>
                 {saving ? 'Saving...' : 'Save'}
               </Text>
             </Pressable>
+            {group.deleting && group.createdBy === uid && groupAction !== 'delete' && (
+              <Text style={styles.body}>Deletion was interrupted. Retry to finish removing this group.</Text>
+            )}
+            {actionError !== '' && <Text style={styles.error} accessibilityRole="alert">{actionError}</Text>}
+            {(!group.deleting || group.createdBy === uid) && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={group.createdBy === uid ? 'Delete Group' : 'Leave Group'}
+                accessibilityState={{ disabled: groupAction !== null || saving || pickingPhoto, busy: groupAction !== null }}
+                disabled={groupAction !== null || saving || pickingPhoto}
+                onPress={confirmGroupAction}
+                style={[styles.actionRow, (groupAction !== null || saving || pickingPhoto) && styles.disabled]}
+              >
+                <Ionicons name={group.createdBy === uid ? 'trash-outline' : 'exit-outline'} size={20} color={colors.danger} />
+                <Text style={styles.actionText}>
+                  {groupAction === 'delete' ? 'Deleting...' : groupAction === 'leave' ? 'Leaving...'
+                    : group.createdBy === uid ? (group.deleting ? 'Retry Delete Group' : 'Delete Group') : 'Leave Group'}
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
       </ScrollView>
@@ -331,4 +417,6 @@ const styles = StyleSheet.create({
   photoStatus: { color: colors.white, textAlign: 'center', marginBottom: 12 },
   error: { color: colors.danger, marginBottom: 12 },
   body: { color: colors.white },
+  actionRow: { marginTop: 32, padding: 16, backgroundColor: colors.cardDarker, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  actionText: { color: colors.danger, fontSize: 16 },
 });
