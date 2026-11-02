@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
+import { matchesProfileSearch } from '@/utils/profileSearch';
 import { useAuth } from '@/features/auth/AuthContext';
 import { Friendship, watchFriendships } from '@/features/friends/friendships';
 import { ProfileStackParamList } from '@/navigation/types';
@@ -130,11 +131,13 @@ export function FriendsScreen() {
       else if (friendship.status === 'pending' && friendship.requesterId === user.uid) outgoing.push(row);
     }
 
-    const normalizedQuery = query.trim().toLocaleLowerCase();
     const matches = (row: FriendRow) => {
       const profile = profiles[row.uid];
-      return !normalizedQuery || `${profile?.displayName ?? row.username} ${profile?.username ?? row.username}`
-        .toLocaleLowerCase().includes(normalizedQuery);
+      return matchesProfileSearch(
+        query,
+        profile?.displayName ?? row.username,
+        profile?.username ?? row.username,
+      );
     };
     const filter = (data: FriendRow[]) => data.filter(matches);
     const result: FriendSection[] = [];

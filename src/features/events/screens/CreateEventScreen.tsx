@@ -1,6 +1,8 @@
 
 import { useState } from 'react';
 import {
+  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,13 +10,20 @@ import {
   Text,
   TextInput,
   View,
+  ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
+import {
+  pickPhotoFromLibrary,
+  takeProfilePhoto,
+} from '@/features/auth/profilePhoto';
 import { colors, fontFamily, radius, spacing } from '@/theme';
+import { EditPhoto } from '@/components/EditPhoto';
+
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
@@ -32,29 +41,144 @@ const EVENT_CATEGORIES = [
   'Other',
 ];
 
-export function CreateEventScreen({
-  navigation,
-  route,
-}: Props) {
-  const [eventName, setEventName] = useState('');
-  const [category, setCategory] = useState(
-    route.params?.category ?? ''
-  );
-  const [customCategory, setCustomCategory] = useState('');
+export function CreateEventScreen({ navigation, route }: Props) {
+  const [eventName, setEventName] = useState(
+  route.params?.eventName ?? ''
+);
+  const [category, setCategory] = useState(() => {
+  const initialCategory = route.params?.category ?? '';
+
+  if (
+    initialCategory &&
+    !EVENT_CATEGORIES.includes(initialCategory)
+  ) {
+    return 'Other';
+  }
+
+  return initialCategory;
+});
+
+  const [customCategory, setCustomCategory] = useState(
+  route.params?.category &&
+    !EVENT_CATEGORIES.includes(route.params.category)
+    ? route.params.category
+    : ''
+);
   const [showCategories, setShowCategories] = useState(false);
+
+  const [eventPhoto, setEventPhoto] = useState<string | null>(
+  route.params?.eventPhoto ?? null
+);
+  const [photoLoading, setPhotoLoading] = useState(false);
 
   const resolvedCategory =
     category === 'Other'
       ? customCategory.trim()
       : category;
 
-  const handleConfirmDetails = () => {
-    navigation.navigate('PickTime', {
-      eventName: eventName.trim(),
-      category: resolvedCategory,
-      presetId: route.params?.presetId,
-    });
+  const chooseEventPhoto = async (
+    source: 'camera' | 'library'
+  ) => {
+    if (photoLoading) return;
+
+    setPhotoLoading(true);
+
+    try {
+      const result =
+        source === 'camera'
+          ? await takeProfilePhoto()
+          : await pickPhotoFromLibrary();
+
+      if (result.error) {
+        Alert.alert('Photo Error', result.error);
+        return;
+      }
+
+      if (result.photo) {
+        setEventPhoto(result.photo.dataUrl);
+      }
+    } catch {
+      Alert.alert(
+        'Photo Error',
+        'Unable to select your event photo. Please try again.'
+      );
+    } finally {
+      setPhotoLoading(false);
+    }
   };
+
+  const openPhotoOptions = () => {
+    if (photoLoading) return;
+
+    if (Platform.OS === 'web') {
+      void chooseEventPhoto('library');
+      return;
+    }
+
+    Alert.alert(
+      'Event Photo',
+      'Choose an event cover photo',
+      [
+        {
+          text: 'Choose from Library',
+          onPress: () => void chooseEventPhoto('library'),
+        },
+        {
+          text: 'Take Photo',
+          onPress: () => void chooseEventPhoto('camera'),
+        },
+        ...(eventPhoto
+          ? [
+              {
+                text: 'Remove Photo',
+                onPress: () => setEventPhoto(null),
+              },
+            ]
+          : []),
+        {
+          text: 'Cancel',
+          style: 'cancel' as const,
+        },
+      ]
+    );
+  };
+
+  const handleConfirmDetails = () => {
+  const updatedDetails = {
+    eventName: eventName.trim(),
+    category: resolvedCategory,
+    presetId: route.params?.presetId,
+    eventPhoto,
+  };
+
+  if (route.params?.editingFromReview) {
+    if (
+      !route.params.startAt ||
+      !route.params.endAt
+    ) {
+      Alert.alert('Error', 'Event date and time are missing.');
+      return;
+    }
+
+    navigation.navigate({
+      name: 'ReviewEvent',
+      params: {
+        ...route.params,
+        ...updatedDetails,
+        startAt: route.params.startAt,
+        endAt: route.params.endAt,
+        selectedMemberIds:
+          route.params.selectedMemberIds ?? [],
+      },
+      merge: true,
+      pop: true,
+    });
+
+    return;
+  }
+
+  navigation.navigate('PickLocation', updatedDetails);
+};
 
   return (
     <KeyboardAvoidingView
@@ -67,17 +191,22 @@ export function CreateEventScreen({
       />
 
       <View style={styles.content}>
-        <Pressable style={styles.photoArea}>
-          <View style={styles.photoCircle}>
-            <Ionicons
-              name="camera-outline"
-              size={54}
-              color={colors.white}
-            />
-          </View>
+  <View style={styles.photoArea}>
+    <EditPhoto
+      photoUri={eventPhoto}
+      onPress={openPhotoOptions}
+      size={120}
+      disabled={photoLoading}
+    />
 
-          <Text style={styles.photoText}>Add Photo</Text>
-        </Pressable>
+    <Text style={styles.photoText}>
+      {photoLoading
+        ? 'Loading Photo...'
+        : eventPhoto
+          ? 'Change Photo'
+          : 'Add Photo'}
+    </Text>
+</View>
 
         <View style={styles.form}>
           <TextInput
@@ -116,7 +245,11 @@ export function CreateEventScreen({
             </Pressable>
 
             {showCategories && (
-              <View style={styles.dropdown}>
+              <ScrollView
+                style={styles.dropdown}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="always"
+              >
                 {EVENT_CATEGORIES.map((item) => (
                   <Pressable
                     key={item}
@@ -131,7 +264,7 @@ export function CreateEventScreen({
                     </Text>
                   </Pressable>
                 ))}
-              </View>
+              </ScrollView>
             )}
 
             {category === 'Other' && (
@@ -182,6 +315,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardDarker,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  eventPhoto: {
+    width: '100%',
+    height: '100%',
   },
 
   photoText: {
@@ -241,10 +380,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 54,
     width: '100%',
+    maxHeight: 180,
     borderRadius: radius.md,
     backgroundColor: colors.cardLighter,
     overflow: 'hidden',
     zIndex: 20,
+    elevation: 20,
   },
 
   dropdownItem: {

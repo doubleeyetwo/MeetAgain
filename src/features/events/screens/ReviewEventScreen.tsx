@@ -37,6 +37,11 @@ import {
   formatEventDate,
   formatEventTime,
 } from '@/features/events/eventTimes';
+import { EditPhoto } from '@/components/EditPhoto';
+
+import { createEvent } from '@/features/events/eventService';
+import { createGroup } from '@/features/messages/groups';
+import { getOrCreateDirectConversation } from '@/features/messages/directConversations';
 
 type Props = NativeStackScreenProps<
   EventCreationStackParamList,
@@ -66,14 +71,40 @@ type SelectedEntry = {
 };
 
 export function ReviewEventScreen({ navigation, route }: Props) {
-  const { eventName, category, startAt, endAt } = route.params;
+  const {
+    eventName,
+    category,
+    startAt,
+    endAt,
+    eventPhoto: initialEventPhoto,
+    selectedMemberIds = [],
+    matchingGroupId,
+    location,
+  } = route.params;
   const eventTimes = {
     start: new Date(startAt),
     end: new Date(endAt),
   };
   const { user } = useAuth();
-  const [eventPhoto, setEventPhoto] = useState<string | null>(null);
+
+  console.log('REVIEW EVENT PHOTO CHECK:', {
+  receivedPhoto: !!initialEventPhoto,
+  photoLength: initialEventPhoto?.length ?? 0,
+  photoPrefix: initialEventPhoto?.slice(0, 30),
+});
+
+  const [eventPhoto, setEventPhoto] = useState<string | null>(
+  initialEventPhoto ?? null
+);
+
+  const [eventPhotoDataUrl, setEventPhotoDataUrl] = useState<string | null>(
+  initialEventPhoto?.startsWith('data:image/')
+    ? initialEventPhoto
+    : null
+);
+
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [savingEvent, setSavingEvent] = useState(false);
 
   const [description, setDescription] = useState('');
   const [reminder, setReminder] = useState('24 hours before');
@@ -87,6 +118,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   const [newPrice, setNewPrice] = useState('');
 
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
+  const [attendeePhotos, setAttendeePhotos] = useState<
+    Record<string, string | null>
+  >({});
 
   const [assignmentEntry, setAssignmentEntry] =
     useState<SelectedEntry | null>(null);
@@ -124,6 +158,41 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     };
   }, [user]);
 
+  const attendeeIds = [...new Set([
+    ...(user?.uid ? [user.uid] : []),
+    ...selectedMemberIds,
+  ])];
+
+  useEffect(() => {
+    let active = true;
+
+    // Clear prior photos immediately when the selected attendees change.
+    setAttendeePhotos({});
+
+    const loadAttendees = async () => {
+      const otherIds = attendeeIds.filter((id) => id !== user?.uid);
+      const profiles = await Promise.all(otherIds.map(async (id) => {
+        try {
+          const snapshot = await getDoc(doc(db, 'publicProfiles', id));
+          const profile = snapshot.exists() ? snapshot.data() : null;
+          return [
+            id,
+            profile?.photoDataUrl ?? profile?.photoURL ?? null,
+          ] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }));
+
+      if (active) setAttendeePhotos(Object.fromEntries(profiles));
+    };
+
+    void loadAttendees();
+    return () => {
+      active = false;
+    };
+  }, [user?.uid, selectedMemberIds]);
+
   const myPhoto =
     myProfile?.photoDataUrl ??
     myProfile?.photoURL ??
@@ -145,35 +214,36 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   // EVENT PHOTO FUNCTIONS
 
   const chooseEventPhoto = async (
-    source: 'camera' | 'library'
-  ) => {
-    if (photoLoading) return;
+  source: 'camera' | 'library'
+) => {
+  if (photoLoading) return;
 
-    setPhotoLoading(true);
+  setPhotoLoading(true);
 
-    try {
-      const result =
-        source === 'camera'
-          ? await takeProfilePhoto()
-          : await pickPhotoFromLibrary();
+  try {
+    const result =
+      source === 'camera'
+        ? await takeProfilePhoto()
+        : await pickPhotoFromLibrary();
 
-      if (result.error) {
-        Alert.alert('Photo Error', result.error);
-        return;
-      }
-
-      if (result.photo) {
-        setEventPhoto(result.photo.uri);
-      }
-    } catch {
-      Alert.alert(
-        'Photo Error',
-        'Unable to select your event photo. Please try again.'
-      );
-    } finally {
-      setPhotoLoading(false);
+    if (result.error) {
+      Alert.alert('Photo Error', result.error);
+      return;
     }
-  };
+
+    if (result.photo) {
+      setEventPhoto(result.photo.uri);
+      setEventPhotoDataUrl(result.photo.dataUrl);
+    }
+  } catch {
+    Alert.alert(
+      'Photo Error',
+      'Unable to select your event photo. Please try again.'
+    );
+  } finally {
+    setPhotoLoading(false);
+  }
+};
 
   const openPhotoOptions = () => {
     if (photoLoading) return;
@@ -200,7 +270,10 @@ export function ReviewEventScreen({ navigation, route }: Props) {
           ? [
               {
                 text: 'Remove Photo',
-                onPress: () => setEventPhoto(null),
+                onPress: () => {
+                  setEventPhoto(null);
+                  setEventPhotoDataUrl(null);
+                },
               },
             ]
           : []),
@@ -353,36 +426,22 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   };
 
   const openDeleteConfirmation = () => {
-    if (!deleteTarget || !deleteEntry) return;
+  if (!deleteEntry) return;
 
-    const selection = deleteEntry;
-    const entryName = deleteTarget.name;
+  const { type, id } = deleteEntry;
 
-    setDeleteEntry(null);
-
-    Alert.alert(
-      `Delete ${selection.type}?`,
-      `Are you sure you want to delete "${entryName}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            if (selection.type === 'item') {
-              setItems((current) =>
-                current.filter((item) => item.id !== selection.id)
-              );
-            } else {
-              setTasks((current) =>
-                current.filter((task) => task.id !== selection.id)
-              );
-            }
-          },
-        },
-      ]
+  if (type === 'item') {
+    setItems((current) =>
+      current.filter((item) => item.id !== id)
     );
-  };
+  } else {
+    setTasks((current) =>
+      current.filter((task) => task.id !== id)
+    );
+  }
+
+  setDeleteEntry(null);
+};
 
   const renderAvatar = (
     type: AddType,
@@ -416,6 +475,131 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     </View>
   );
 
+  
+
+  const handleConfirmEvent = async () => {
+  console.log('STEP 1: Confirm Event pressed', {
+    userId: user?.uid,
+    savingEvent,
+  });
+
+  if (!user || savingEvent) return;
+
+  const normalizedTitle = eventName.trim() || 'Untitled Event';
+  const startTime = new Date(startAt).getTime();
+  const endTime = new Date(endAt).getTime();
+  if (normalizedTitle.length > 150) {
+    Alert.alert('Event Title Too Long', 'Event titles must be 150 characters or fewer.');
+    return;
+  }
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) {
+    Alert.alert('Invalid Event Time', 'Choose an end time after the start time.');
+    return;
+  }
+
+  let saveStage = 'event group';
+  try {
+setSavingEvent(true);
+
+const participantIds = [...new Set([
+  user.uid,
+  ...selectedMemberIds,
+])].sort();
+
+console.log('EVENT PARTICIPANTS:', {
+  currentUser: user.uid,
+  selectedMemberIds,
+  participantIds,
+});
+
+// A two-person event always uses the durable DM, even if an exact group exists.
+const isDirectEvent = participantIds.length === 2;
+let groupId: string | null = isDirectEvent ? null : (matchingGroupId ?? null);
+let directConversationId: string | undefined;
+let directConversationTitle = eventName;
+
+if (isDirectEvent) {
+  saveStage = 'direct conversation';
+  const otherId = participantIds.find((id) => id !== user.uid);
+  if (!otherId) throw new Error('Choose one other person for a direct event.');
+  const conversation = await getOrCreateDirectConversation(user.uid, otherId);
+  directConversationId = conversation.id;
+  const otherProfile = await getDoc(doc(db, 'publicProfiles', otherId));
+  directConversationTitle = otherProfile.data()?.displayName ?? eventName;
+} else if (participantIds.length > 1 && !groupId) {
+  const friendIds = participantIds.filter(
+    (id) => id !== user.uid
+  );
+  console.log('Creating a new group for this event');
+
+  const group = await createGroup(user.uid, friendIds);
+  groupId = group.id;
+}
+
+saveStage = 'event';
+const eventId = await createEvent({
+  creatorId: user.uid,
+  title: normalizedTitle,
+  category,
+  description,
+  location: location ?? '',
+  photoURL: eventPhotoDataUrl,
+  startAt,
+  endAt,
+  groupId,
+  directConversationId,
+  participantIds,
+  items,
+  tasks,
+  reminderMinutesBefore: {
+    '30 minutes before': 30,
+    '1 hour before': 60,
+    '2 hours before': 120,
+    '24 hours before': 1440,
+  }[reminder] ?? null,
+});
+
+if (directConversationId) {
+  navigation.getParent()?.navigate('Messages', {
+    screen: 'Conversation',
+    initial: false,
+    params: {
+      kind: 'friend',
+      title: directConversationTitle,
+      memberIds: participantIds,
+      directConversationId,
+    },
+  });
+} else if (groupId) {
+  navigation.getParent()?.navigate('Messages', {
+    screen: 'Conversation',
+    initial: false,
+    params: {
+      kind: 'group',
+      title: eventName,
+      memberIds: participantIds,
+      groupId,
+    },
+  });
+} else {
+  Alert.alert('Event Created', 'Your event was saved!');
+  navigation.getParent()?.navigate('Home');
+}
+
+} catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`Failed to save ${saveStage}:`, error);
+    Alert.alert(
+      'Could Not Save Event',
+      saveStage === 'event group'
+        ? `The event group could not be created. Check that everyone is still an accepted friend, then try again. (${detail})`
+        : `The event could not be saved. Please try again. (${detail})`
+    );
+  } finally {
+    setSavingEvent(false);
+  }
+};
+
   return (
     <View style={styles.screen}>
       <LinearGradient
@@ -438,79 +622,99 @@ export function ReviewEventScreen({ navigation, route }: Props) {
       >
         {/* EVENT PHOTO - MATCHES EDIT PROFILE */}
 
-        <Pressable
-          style={styles.photoContainer}
-          onPress={openPhotoOptions}
-          disabled={photoLoading}
-          accessibilityRole="button"
-          accessibilityLabel={
-            eventPhoto ? 'Change event photo' : 'Add event photo'
-          }
-        >
-          <View style={styles.photoCircle}>
-            {eventPhoto ? (
-              <Image
-                source={{ uri: eventPhoto }}
-                style={styles.eventPhoto}
-              />
-            ) : (
-              <Ionicons
-                name="camera-outline"
-                size={48}
-                color={colors.white}
-              />
-            )}
-          </View>
-
-          <View style={styles.cameraBadge}>
-            <Ionicons
-              name="camera"
-              size={22}
-              color={colors.white}
-            />
-          </View>
-        </Pressable>
+        {/* EVENT PHOTO */}
+        <View style={styles.photoContainer}>
+          <EditPhoto
+            photoUri={eventPhoto}
+            onPress={openPhotoOptions}
+            size={120}
+            disabled={photoLoading}
+          />
+        </View>
 
         <Text style={styles.eventTitle}>
           {eventName || 'Untitled Event'}
         </Text>
 
         <View style={styles.eventInfo}>
-          <View style={styles.eventInfoLeft}>
-            <Text style={styles.eventInfoText}>
-              {category || 'No Category'}
-            </Text>
-            <Text style={styles.eventInfoText}>
-              {formatEventDate(eventTimes)}
-            </Text>
-          </View>
+  <View style={styles.eventInfoLeft}>
+    {/* CATEGORY */}
+    <Pressable
+      onPress={() =>
+        navigation.navigate('EventDetails', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Text style={styles.eventInfoText}>
+        {category || 'No Category'}
+      </Text>
+    </Pressable>
 
-          <View style={styles.infoDivider} />
+    {/* DATE */}
+    <Pressable
+      onPress={() =>
+        navigation.navigate('PickTime', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Text style={styles.eventInfoText}>
+        {formatEventDate(eventTimes)}
+      </Text>
+    </Pressable>
+  </View>
 
-          <View style={styles.eventInfoRight}>
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="location-outline"
-                size={19}
-                color={colors.white}
-              />
-              <Text style={styles.eventInfoText}>
-                Location not selected
-              </Text>
-            </View>
+  <View style={styles.infoDivider} />
 
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="time-outline"
-                size={19}
-                color={colors.white}
-              />
-              <Text style={styles.eventInfoText}>
-                {formatEventTime(eventTimes)}
-              </Text>
-            </View>
-          </View>
-        </View>
+  <View style={styles.eventInfoRight}>
+    {/* LOCATION */}
+    <Pressable
+      style={styles.infoRow}
+      onPress={() =>
+        navigation.navigate('PickLocation', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Ionicons
+        name="location-outline"
+        size={19}
+        color={colors.white}
+      />
+      <Text style={styles.eventInfoText}>
+        {location || 'Location not selected'}
+      </Text>
+    </Pressable>
+
+    {/* TIME */}
+    <Pressable
+      style={styles.infoRow}
+      onPress={() =>
+        navigation.navigate('PickTime', {
+          ...route.params,
+          eventPhoto,
+          editingFromReview: true,
+        })
+      }
+    >
+      <Ionicons
+        name="time-outline"
+        size={19}
+        color={colors.white}
+      />
+      <Text style={styles.eventInfoText}>
+        {formatEventTime(eventTimes)}
+      </Text>
+    </Pressable>
+  </View>
+</View>
 
         <View style={styles.descriptionBox}>
           <TextInput
@@ -523,6 +727,28 @@ export function ReviewEventScreen({ navigation, route }: Props) {
             textAlignVertical="top"
           />
         </View>
+
+        <Text style={styles.sectionHeadingText}>Attendees</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.attendeeRow}
+          contentContainerStyle={styles.attendeeContent}
+          accessibilityLabel="Event attendees"
+        >
+          {attendeeIds.map((id) => {
+            const photo = id === user?.uid ? myPhoto : attendeePhotos[id];
+            return (
+              <View key={id} style={styles.attendeeAvatar}>
+                {photo ? (
+                  <Image source={{ uri: photo }} style={styles.attendeePhoto} />
+                ) : (
+                  <Ionicons name="person-outline" size={20} color={colors.white} />
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
 
         {/* REMINDER DROPDOWN */}
 
@@ -715,7 +941,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
         <Pressable
           style={styles.deleteButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.getParent()?.navigate('Home')}
         >
           <Ionicons
             name="trash-outline"
@@ -732,12 +958,8 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
       <View style={styles.confirmContainer}>
         <Pressable
-          onPress={() =>
-            Alert.alert(
-              'Confirm Event',
-              'Saving events will be connected later.'
-            )
-          }
+          onPress={() => void handleConfirmEvent()}
+          disabled={savingEvent}
           style={styles.confirmButton}
         >
           <LinearGradient
@@ -972,8 +1194,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         </Pressable>
       </Modal>
     </View>
-  );
-}
+  );}
 
 function SectionHeading({
   title,
@@ -1106,6 +1327,32 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 16,
     textAlignVertical: 'top',
+  },
+
+  attendeeRow: {
+    marginTop: 10,
+    marginBottom: 18,
+  },
+
+  attendeeContent: {
+    gap: 10,
+    paddingHorizontal: 2,
+  },
+
+  attendeeAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primaryAccent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  attendeePhoto: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
 
   // REMINDER

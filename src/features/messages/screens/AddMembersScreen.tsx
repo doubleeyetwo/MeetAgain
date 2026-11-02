@@ -3,21 +3,25 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, Vi
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { MessagesStackParamList } from '@/navigation/types';
 import { useAcceptedMessageFriends } from '@/features/messages/useAcceptedMessageFriends';
 import { useAuth } from '@/features/auth/AuthContext';
-import { createGroup, MAX_GROUP_MEMBERS } from '@/features/messages/groups';
+import { addGroupMembers, createGroup, MAX_GROUP_MEMBERS, watchGroup, type Group } from '@/features/messages/groups';
 import { FriendAvatar, friendDisplayName, friendSearchText } from '@/features/messages/FriendDisplay';
 
-type Navigation = NativeStackNavigationProp<MessagesStackParamList, 'AddMembers'>;
-const MAX_SELECTED = MAX_GROUP_MEMBERS - 1;
+type Props = NativeStackScreenProps<MessagesStackParamList, 'AddMembers'>;
 
-export function AddMembersScreen() {
-  const navigation = useNavigation<Navigation>();
+export function AddMembersScreen({ navigation, route }: Props) {
   const { user } = useAuth();
+  const groupId = route.params?.groupId;
+  const contextKey = JSON.stringify([user?.uid ?? null, groupId ?? null]);
+  const currentContext = useRef(contextKey);
+  currentContext.current = contextKey;
+  const [groupState, setGroupState] = useState<{
+    key: string; group: Group | null; error: string;
+  } | null>(null);
   const { friends, loading, error: friendsError, retry } = useAcceptedMessageFriends();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
@@ -27,11 +31,36 @@ export function AddMembersScreen() {
   const busy = useRef(false);
   const mounted = useRef(true);
   const currentUid = useRef(user?.uid ?? null);
+  currentUid.current = user?.uid ?? null;
   useEffect(() => {
     currentUid.current = user?.uid ?? null;
     setSelected([]);
     setSaveError('');
-  }, [user?.uid]);
+  }, [contextKey]);
+  useEffect(() => {
+    if (!groupId || !user?.uid) return;
+    let active = true;
+    const actorUid = user.uid;
+    const unsubscribe = watchGroup(groupId, (group) => {
+      if (!active) return;
+      const accessible = group && group.memberIds.includes(actorUid);
+      setGroupState({ key: contextKey, group: accessible ? group : null,
+        error: accessible ? '' : 'This group is unavailable.' });
+    }, () => {
+      if (active) setGroupState({ key: contextKey, group: null, error: 'Could not load this group. Go back and try again.' });
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [groupId, user?.uid, contextKey]);
+  // Key the loaded data to its account and route so an old snapshot cannot enable a write.
+  const currentGroupState = groupState?.key === contextKey ? groupState : null;
+  const existingGroup = currentGroupState?.group ?? null;
+  const groupLoading = Boolean(groupId && user && !currentGroupState);
+  const groupError = groupId ? (!user ? 'Sign in to add members.' : currentGroupState?.error ?? '') : '';
+  const groupUnavailable = Boolean(groupId && !existingGroup);
+  const maxSelected = groupId ? Math.max(0, MAX_GROUP_MEMBERS - (existingGroup?.memberIds.length ?? MAX_GROUP_MEMBERS)) : MAX_GROUP_MEMBERS - 1;
+  const eligibleFriends = useMemo(() => friends.filter((friend) => (
+    !groupId || (existingGroup !== null && !existingGroup.memberIds.includes(friend.uid))
+  )), [friends, groupId, existingGroup]);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -42,34 +71,43 @@ export function AddMembersScreen() {
   useEffect(() => {
     if (loading) return;
     // Drop selections that stopped being accepted friends while this screen stayed open.
-    const available = new Set(friends.map((friend) => friend.uid));
-    setSelected((current) => current.filter((uid) => available.has(uid)));
-  }, [friends, loading]);
+    const available = new Set(eligibleFriends.map((friend) => friend.uid));
+    setSelected((current) => current.filter((uid) => available.has(uid)).slice(0, maxSelected));
+  }, [eligibleFriends, loading, maxSelected]);
   const filteredFriends = useMemo(() => {
     const term = query.trim().toLocaleLowerCase();
-    return term ? friends.filter((friend) => friendSearchText(friend).toLocaleLowerCase().includes(term)) : friends;
-  }, [friends, query]);
+    return term ? eligibleFriends.filter((friend) => friendSearchText(friend).toLocaleLowerCase().includes(term)) : eligibleFriends;
+  }, [eligibleFriends, query]);
 
   const toggle = (uid: string) => {
     setSaveError('');
     setSelected((current) => current.includes(uid)
       ? current.filter((item) => item !== uid)
-      : current.length < MAX_SELECTED ? [...current, uid] : current);
+      : current.length < maxSelected ? [...current, uid] : current);
   };
 
   const confirm = async () => {
-    const availableIds = new Set(friends.map((friend) => friend.uid));
-    if (!user || busy.current || loading || friendsError || selected.length === 0 || selected.length > MAX_SELECTED
+    const availableIds = new Set(eligibleFriends.map((friend) => friend.uid));
+    if (!user || busy.current || loading || friendsError || groupUnavailable || selected.length === 0 || selected.length > maxSelected
       || selected.some((uid) => !availableIds.has(uid))) return;
     // Capture the account at submission time so a late response cannot navigate another account.
     busy.current = true;
     setSaving(true);
     setSaveError('');
     const creatorUid = user.uid;
+    const operationContext = contextKey;
     try {
+      if (groupId) {
+        await addGroupMembers(groupId, creatorUid, selected);
+        if (mounted.current && currentContext.current === operationContext) {
+          // Return to Members; its subscription supplies the updated list.
+          navigation.goBack();
+        }
+        return;
+      }
       const group = await createGroup(creatorUid, selected);
       // The screen or signed-in account may have changed while Firestore was saving.
-      if (!mounted.current || currentUid.current !== creatorUid) return;
+      if (!mounted.current || currentUid.current !== creatorUid || currentContext.current !== operationContext) return;
       navigation.replace('Conversation', {
         kind: 'group',
         title: group.name,
@@ -77,15 +115,15 @@ export function AddMembersScreen() {
         groupId: group.id,
       });
     } catch (reason) {
-      if (mounted.current && currentUid.current === creatorUid) setSaveError(reason instanceof Error ? reason.message : 'Could not create the group. Try again.');
+      if (mounted.current && currentContext.current === operationContext) setSaveError(reason instanceof Error ? reason.message : 'Could not save members. The group may have changed. Try again.');
     } finally {
       busy.current = false;
       if (mounted.current) setSaving(false);
     }
   };
 
-  const confirmDisabled = selected.length === 0 || saving || loading || friendsError;
-  const confirmLooksDisabled = selected.length === 0 || saving;
+  const confirmDisabled = selected.length === 0 || selected.length > maxSelected || saving || loading || friendsError || groupUnavailable;
+  const confirmLooksDisabled = confirmDisabled;
 
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
@@ -111,12 +149,16 @@ export function AddMembersScreen() {
             value={query}
           />
         </View>
-        <Text style={styles.selectionCount}>{selected.length} selected · up to {MAX_SELECTED} friends</Text>
+        <Text style={styles.selectionCount}>{selected.length} selected · up to {maxSelected} friends</Text>
 
-        {loading ? (
+        {groupLoading || loading ? (
           <View style={styles.state}>
             <ActivityIndicator color={colors.white} />
             <Text style={styles.stateText}>Loading friends...</Text>
+          </View>
+        ) : groupError ? (
+          <View style={styles.state}>
+            <Text accessibilityRole="alert" style={styles.stateText}>{groupError}</Text>
           </View>
         ) : friendsError ? (
           <View style={styles.state}>
@@ -131,7 +173,7 @@ export function AddMembersScreen() {
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {
               const checked = selected.includes(item.uid);
-              const capped = !checked && selected.length >= MAX_SELECTED;
+              const capped = !checked && selected.length >= maxSelected;
               return (
                 <Pressable
                   accessibilityRole="checkbox"
@@ -152,7 +194,9 @@ export function AddMembersScreen() {
                 </Pressable>
               );
             }}
-            ListEmptyComponent={<EmptyFriendsMessage query={query} friendCount={friends.length} />}
+            ListEmptyComponent={groupId && !query.trim()
+              ? <Text style={styles.stateText}>{maxSelected === 0 ? 'This group is full.' : 'No accepted friends are available to add.'}</Text>
+              : <EmptyFriendsMessage query={query} friendCount={eligibleFriends.length} />}
             showsVerticalScrollIndicator={false}
           />
         )}

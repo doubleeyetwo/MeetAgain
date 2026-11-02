@@ -1,4 +1,5 @@
-import { NavigatorScreenParams } from '@react-navigation/native';
+import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
 // Route params are deliberately limited to non-secret navigation state; signup credentials stay in AuthContext.
 export type AuthStackParamList = {
@@ -22,14 +23,24 @@ export type ProfileStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Messages: undefined;
-  CreateEvent: undefined;
+  CreateEvent:
+  | NavigatorScreenParams<EventCreationStackParamList>
+  | undefined;
   Calendar: undefined;
-  Profile: undefined;
+  // Allow opening a specific profile screen, or selecting the tab normally.
+  Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };
 
 export type MessagesStackParamList = {
   MessageList: undefined;
-  AddMembers: undefined;
+  // No params creates a group; groupId adds friends to an existing conversation.
+  AddMembers: { groupId: string } | undefined;
+  // Pass only the ID so each screen can load the group's current data.
+  GroupOverview: { groupId: string };
+  GroupMembers: { groupId: string };
+  GroupSettings: { groupId: string };
+  // Open another member's profile within Messages so Back returns to its caller.
+  MemberProfile: { uid: string };
   Conversation:
   | {
       kind: 'friend';

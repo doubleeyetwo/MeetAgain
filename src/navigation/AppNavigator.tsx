@@ -100,7 +100,11 @@ if (activeTab.name === 'Messages' && activeScreen === 'Conversation') {
           }}
         >
           <Pressable
-            onPress={() => navigation.navigate('CreateEvent')}
+            onPress={() => {
+              navigation.navigate('CreateEvent', {
+                screen: 'EventTemplates',
+              });
+            }}
             style={{
               width: 55,
               height: 55,

@@ -20,15 +20,15 @@ import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { Friendship, removeFriendship, respondToFriendRequest, sendFriendRequest, watchFriendships } from '@/features/friends/friendships';
 import { collections } from '@/data/firestorePaths';
-import { ProfileStackParamList } from '@/navigation/types';
+import type { MessagesStackParamList, ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { PublicProfile } from '@/types/models';
 import { useFriendCount } from '@/features/friends/useFriendCount';
 
-type Props = NativeStackScreenProps<
-  ProfileStackParamList,
-  'OtherProfile'
->;
+// Reuse this screen in either stack; Back follows the stack that opened it.
+type Props =
+  | NativeStackScreenProps<ProfileStackParamList, 'OtherProfile'>
+  | NativeStackScreenProps<MessagesStackParamList, 'MemberProfile'>;
 
 // Memory tiles are 104x93 at a 367pt frame width; keep the ratio and let the row divide the width.
 const TILE_ASPECT = 104 / 93;
