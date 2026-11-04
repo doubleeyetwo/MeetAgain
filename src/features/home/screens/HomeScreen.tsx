@@ -21,6 +21,10 @@ import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { colors, gradients, spacing } from '@/theme';
 import {
+  MeetNowBar,
+  placeholderMeetNowFriends,
+} from '../components/MeetNowBar';
+import {
   UpcomingEventCard,
   type UpcomingEvent,
 } from '../components/UpcomingEventCard';
@@ -127,8 +131,8 @@ export function HomeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* MEETNOW - Reserved for teammate */}
-        <View style={styles.meetNowSpace} />
+        {/* MEETNOW - friends are placeholders until #34 is wired up. */}
+        <MeetNowBar friends={placeholderMeetNowFriends} />
 
         {/* UPCOMING EVENTS */}
         <View style={styles.upcomingSection}>
@@ -199,10 +203,6 @@ const styles = StyleSheet.create({
 
   content: {
     paddingBottom: spacing.xxl,
-  },
-
-  meetNowSpace: {
-    height: 170,
   },
 
   upcomingSection: {
