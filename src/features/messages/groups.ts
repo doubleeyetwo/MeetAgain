@@ -277,12 +277,14 @@ export async function deleteGroup(groupId: string, actorUid: string): Promise<vo
     if (!group.deleting) transaction.update(groupRef, { deleting: true, updatedAt: serverTimestamp() });
   });
 
-  // Current group data lives in messages and top-level events. Drain bounded batches before
-  // removing the parent; Firestore does not cascade subcollection deletes.
+  // Current group data lives in messages, polls, and top-level events. Drain bounded batches
+  // before removing the parent; Firestore does not cascade subcollection deletes.
   const messagesRef = collection(groupRef, 'messages');
+  const pollsRef = collection(groupRef, 'polls');
   const eventsRef = collection(db, 'events');
   for (const source of [
     query(messagesRef, limit(200)),
+    query(pollsRef, limit(200)),
     query(eventsRef, where('groupId', '==', groupId), limit(200)),
   ]) {
     for (;;) {

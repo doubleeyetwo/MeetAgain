@@ -17,10 +17,12 @@ import {
   sendGroupPhoto,
   watchGroupMessages,
   type GroupMessage,
+  type GroupPollMessage,
 } from '../messages';
 import { sendGroupPoll } from '../polls';
 import { PollCreationModal } from '../PollCreationModal';
 import { PollMessageCard } from '../PollMessageCard';
+import { PollVotingModal } from '../PollVotingModal';
 import { sendDirectMessage, watchDirectMessages } from '../directMessages';
 import { watchGroup } from '../groups';
 import {
@@ -60,6 +62,7 @@ export function ConversationScreen({ navigation, route }: Props) {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [pollOpen, setPollOpen] = useState(false);
+  const [votingPoll, setVotingPoll] = useState<GroupPollMessage | null>(null);
   const canPostToGroup = kind === 'group' && !!groupId;
   const [groupAccess, setGroupAccess] = useState<{ key: string; state: 'checking' | 'ready' | 'cleanup' | 'unavailable' }>({ key: conversationKey, state: 'checking' });
   const groupReady = kind !== 'group' || (groupAccess.key === conversationKey && groupAccess.state === 'ready');
@@ -123,6 +126,7 @@ useEffect(() => {
       if (!subscribed) return;
       setGroupAccess({ key, state });
       setPollOpen(false);
+      setVotingPoll(null);
       setMenuOpen(false);
       if (navigation.isFocused() && !groupRedirecting.current) {
         groupRedirecting.current = true;
@@ -159,6 +163,7 @@ useEffect(() => {
     setAttachment(null);
     setMenuOpen(false);
     setFullscreenPhoto(null);
+    setVotingPoll(null);
     setSendError(null);
   }, [conversationKey]);
   const [friendshipAccepted, setFriendshipAccepted] = useState(false);
@@ -458,9 +463,16 @@ useEffect(() => {
                 const isOwnMessage = message.senderId === user?.uid;
 
                 if (message.type === 'poll') {
+                  // Polls only exist in group chats, where their votes are stored.
+                  if (!groupId) return null;
                   return (
                     <View key={message.id} style={{ alignSelf: isOwnMessage ? 'flex-end' : 'flex-start' }}>
-                      <PollMessageCard poll={message} />
+                      <PollMessageCard
+                        poll={message}
+                        groupId={groupId}
+                        voterId={user?.uid}
+                        onPress={() => { if (groupReady) setVotingPoll(message); }}
+                      />
                     </View>
                   );
                 }
@@ -571,6 +583,16 @@ useEffect(() => {
           </Pressable>
         </View>
         <PollCreationModal visible={pollOpen} onClose={() => setPollOpen(false)} onPost={handlePostPoll} />
+        {/* Mounting per poll starts each opening on the voting view with no leftover choice. */}
+        {votingPoll && groupId && user ? (
+          <PollVotingModal
+            key={votingPoll.id}
+            groupId={groupId}
+            poll={votingPoll}
+            voterId={user.uid}
+            onClose={() => setVotingPoll(null)}
+          />
+        ) : null}
       </SafeAreaView>
       <Modal visible={fullscreenPhoto !== null} transparent onRequestClose={() => setFullscreenPhoto(null)} animationType="fade">
         <View style={styles.photoModal}>

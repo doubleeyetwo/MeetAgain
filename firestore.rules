@@ -610,6 +610,52 @@ service cloud.firestore {
           allow delete: if isGroupMember() && groupDeleting()
             && request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy;
         }
+        // Votes are keyed by user ID, so each member holds at most one vote per poll.
+        match /polls/{pollId} {
+          function isGroupMember() {
+            return request.auth != null
+            && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+          }
+          function groupDeleting() {
+            return get(/databases/$(database)/documents/groups/$(groupId)).data.get('deleting', false) == true;
+          }
+          // The chat message that shows this poll shares its document ID.
+          function pollMessage() {
+            return getAfter(/databases/$(database)/documents/groups/$(groupId)/messages/$(pollId)).data;
+          }
+
+          function validNewPoll() {
+            let poll = request.resource.data;
+
+            return poll.keys().hasAll(['createdBy', 'question', 'options', 'votes', 'createdAt'])
+            && poll.keys().hasOnly(['createdBy', 'question', 'options', 'votes', 'createdAt'])
+            && poll.createdBy == request.auth.uid
+            && poll.votes == {}
+            && poll.createdAt == request.time
+            // The message rules validate the question and answers, so the poll must match them.
+            && pollMessage().type == 'poll'
+            && pollMessage().senderId == request.auth.uid
+            && pollMessage().question == poll.question
+            && pollMessage().options == poll.options;
+          }
+
+          function validVote() {
+            let votes = request.resource.data.votes;
+            let choice = votes.get(request.auth.uid, -1);
+
+            return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+            && votes.diff(resource.data.votes).affectedKeys().hasOnly([request.auth.uid])
+            && choice is int
+            && choice >= 0
+            && choice < resource.data.options.size();
+          }
+
+          allow read: if isGroupMember();
+          allow create: if isGroupMember() && !groupDeleting() && validNewPoll();
+          allow update: if isGroupMember() && !groupDeleting() && validVote();
+          allow delete: if isGroupMember() && groupDeleting()
+            && request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy;
+        }
     }
     match /groupMemberships/{memberKey} {
       // Retired uniqueness claims remain stored but are no longer used by clients.
