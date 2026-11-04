@@ -16,6 +16,7 @@ import {
   where,
   type Timestamp,
 } from 'firebase/firestore';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -126,68 +127,73 @@ export function HomeScreen() {
       colors={gradients.background}
       style={styles.screen}
     >
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
+      <SafeAreaView
+        style={styles.screen}
+        edges={['top', 'left', 'right']}
       >
-        {/* MEETNOW - friends are placeholders until #34 is wired up. */}
-        <MeetNowBar friends={placeholderMeetNowFriends} />
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* MEETNOW - friends are placeholders until #34 is wired up. */}
+          <MeetNowBar friends={placeholderMeetNowFriends} />
 
-        {/* UPCOMING EVENTS */}
-        <View style={styles.upcomingSection}>
-          <Text style={styles.sectionTitle}>
-            Upcoming
-          </Text>
+          {/* UPCOMING EVENTS */}
+          <View style={styles.upcomingSection}>
+            <Text style={styles.sectionTitle}>
+              Upcoming
+            </Text>
 
-          {loading ? (
-            <View style={styles.centerState}>
-              <ActivityIndicator
-                size="large"
-                color={colors.primaryAccent}
-              />
-              <Text style={styles.stateDescription}>
-                Loading upcoming events...
-              </Text>
-            </View>
-          ) : error ? (
-            <View style={styles.centerState}>
-              <Ionicons
-                name="alert-circle-outline"
-                size={40}
-                color={colors.linkAccent}
-              />
-              <Text style={styles.stateTitle}>
-                Unable to Load Events
-              </Text>
-              <Text style={styles.stateDescription}>
-                Please check your connection and try again.
-              </Text>
-            </View>
-          ) : upcomingEvents.length === 0 ? (
-            <View style={styles.centerState}>
-              <Ionicons
-                name="calendar-outline"
-                size={42}
-                color={colors.linkAccent}
-              />
-              <Text style={styles.stateTitle}>
-                No Upcoming Events
-              </Text>
-              <Text style={styles.stateDescription}>
-                Events you're invited to will appear here.
-              </Text>
-            </View>
-          ) : (
-            upcomingEvents.map((event) => (
-              <UpcomingEventCard
-                key={event.id}
-                event={event}
-              />
-            ))
-          )}
-        </View>
-      </ScrollView>
+            {loading ? (
+              <View style={styles.centerState}>
+                <ActivityIndicator
+                  size="large"
+                  color={colors.primaryAccent}
+                />
+                <Text style={styles.stateDescription}>
+                  Loading upcoming events...
+                </Text>
+              </View>
+            ) : error ? (
+              <View style={styles.centerState}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={40}
+                  color={colors.linkAccent}
+                />
+                <Text style={styles.stateTitle}>
+                  Unable to Load Events
+                </Text>
+                <Text style={styles.stateDescription}>
+                  Please check your connection and try again.
+                </Text>
+              </View>
+            ) : upcomingEvents.length === 0 ? (
+              <View style={styles.centerState}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={42}
+                  color={colors.linkAccent}
+                />
+                <Text style={styles.stateTitle}>
+                  No Upcoming Events
+                </Text>
+                <Text style={styles.stateDescription}>
+                  Events you're invited to will appear here.
+                </Text>
+              </View>
+            ) : (
+              upcomingEvents.map((event) => (
+                <UpcomingEventCard
+                  key={event.id}
+                  event={event}
+                />
+              ))
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     </LinearGradient>
   );
 }
