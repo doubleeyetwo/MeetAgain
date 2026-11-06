@@ -1,15 +1,23 @@
-import { useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import * as Google from 'expo-auth-session/providers/google';
+import { exchangeCodeAsync } from 'expo-auth-session';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '@/features/auth/AuthContext';
 import { deleteAccount } from '@/features/profile/deleteAccount';
+import { disconnectGoogleCalendar, getGoogleCalendarSnapshot, importGoogleCalendar } from '@/features/calendar/googleCalendar';
+import { clearAllGoogleCalendarTokens, getGoogleCalendarToken, rememberGoogleCalendarToken } from '@/features/calendar/googleCalendarTokenCache';
 import { ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, radius, spacing, text } from '@/theme';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type ProfileNavigation = NativeStackNavigationProp<ProfileStackParamList>;
 
@@ -70,10 +78,127 @@ function PillButton({ label, color, onPress, icon, disabled }: PillProps) {
 export function SettingsScreen() {
   const navigation = useNavigation<ProfileNavigation>();
   const { user, signOut } = useAuth();
+  const googleClientIds = {
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+  };
+  const googleClientId = Platform.select({
+    ios: googleClientIds.iosClientId,
+    android: googleClientIds.androidClientId,
+    default: googleClientIds.webClientId,
+  });
+  const [googleRequest, , promptGoogle] = Google.useAuthRequest({
+    clientId: googleClientId?.trim() || 'unconfigured-google-client-id',
+    scopes: ['https://www.googleapis.com/auth/calendar.freebusy'],
+    selectAccount: true,
+    shouldAutoExchangeCode: false,
+  });
   const busyRef = useRef(false);
   const confirmationOpen = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [calendarImported, setCalendarImported] = useState(false);
+  const [calendarLastUpdated, setCalendarLastUpdated] = useState<Date | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(true);
+  const calendarStatusRequest = useRef(0);
+  const previousUserId = useRef(user?.uid ?? null);
+
+  useEffect(() => {
+    const currentUserId = user?.uid ?? null;
+    if (previousUserId.current !== currentUserId) clearAllGoogleCalendarTokens();
+    previousUserId.current = currentUserId;
+  }, [user?.uid]);
+
+  const refreshCalendarStatus = useCallback(async () => {
+    const requestId = ++calendarStatusRequest.current;
+    setCalendarLoading(true);
+    try {
+      const snapshot = user ? await getGoogleCalendarSnapshot(user.uid) : null;
+      if (calendarStatusRequest.current !== requestId) return;
+      setCalendarImported(snapshot !== null);
+      setCalendarLastUpdated(snapshot?.lastUpdated ?? null);
+    } catch (failure) {
+      if (calendarStatusRequest.current !== requestId) return;
+      setError(failure instanceof Error ? failure.message : 'Could not check Google Calendar status.');
+    } finally {
+      if (calendarStatusRequest.current === requestId) setCalendarLoading(false);
+    }
+  }, [user]);
+
+  useFocusEffect(useCallback(() => {
+    void refreshCalendarStatus();
+  }, [refreshCalendarStatus]));
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshCalendarStatus();
+    });
+    return () => subscription.remove();
+  }, [refreshCalendarStatus]);
+
+  const onToggleGoogleCalendar = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      if (!user) throw new Error('Sign in to MeetAgain before importing a calendar.');
+      if (Platform.OS !== 'web' && Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+        throw new Error('Google Calendar import needs a development build on iOS or Android. You can still view a saved snapshot in Expo Go.');
+      }
+      if (!googleClientId?.trim()) throw new Error('Google Calendar sign-in is not configured. Add the platform OAuth client ID in your setup.');
+      let accessToken = getGoogleCalendarToken(user.uid);
+      if (!accessToken) {
+        if (!googleRequest) throw new Error('Google Calendar sign-in is not ready. Try again.');
+        const authResult = await promptGoogle();
+        if (authResult.type === 'cancel' || authResult.type === 'dismiss') return;
+        if (authResult.type !== 'success') throw new Error('Google Calendar sign-in failed. Try again.');
+        accessToken = authResult.authentication?.accessToken ?? null;
+        let expiresIn = authResult.authentication?.expiresIn;
+        const code = authResult.params.code;
+        if (!accessToken && typeof code === 'string' && Platform.OS !== 'web') {
+          const nativeClientId = Platform.OS === 'ios' ? googleClientIds.iosClientId : googleClientIds.androidClientId;
+          if (!nativeClientId || !googleRequest.codeVerifier || !googleRequest.redirectUri) throw new Error('Google Calendar sign-in could not be completed. Check your native OAuth setup.');
+          const token = await exchangeCodeAsync({
+            clientId: nativeClientId,
+            code,
+            redirectUri: googleRequest.redirectUri,
+            extraParams: { code_verifier: googleRequest.codeVerifier },
+          }, Google.discovery);
+          accessToken = token.accessToken;
+          expiresIn = token.expiresIn;
+        }
+        if (!accessToken) throw new Error('Google did not provide calendar access. Try again.');
+        rememberGoogleCalendarToken(user.uid, accessToken, expiresIn);
+      }
+      await importGoogleCalendar(user.uid, accessToken);
+      await refreshCalendarStatus();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not update Google Calendar connection.');
+      await refreshCalendarStatus();
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const onDisconnectGoogleCalendar = async () => {
+    if (busyRef.current || !user) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await disconnectGoogleCalendar(user.uid);
+      setCalendarImported(false);
+      setCalendarLastUpdated(null);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not remove the saved calendar snapshot.');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
 
   const onLogOut = async () => {
     // The ref closes the same-tick double-tap window before React updates the disabled state.
@@ -83,6 +208,7 @@ export function SettingsScreen() {
     setError('');
     try {
       await signOut();
+      clearAllGoogleCalendarTokens();
     } catch {
       setError('Could not log out. Please try again.');
     } finally {
@@ -117,6 +243,7 @@ export function SettingsScreen() {
     setError('');
     try {
       await deleteAccount(user);
+      clearAllGoogleCalendarTokens();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Could not finish deleting your account. Please try again.');
     } finally {
@@ -181,11 +308,18 @@ export function SettingsScreen() {
           <View style={styles.pills}>
             <PillButton
               icon="calendar-outline"
-              label="Integrate Google Calendar"
-              color={colors.linkAccent}
-              // Destination is Google Calendar Integration (#44).
-              onPress={() => {}}
+              label={calendarLoading ? 'Checking saved calendar...' : calendarImported ? 'Connected / Refresh Google Calendar' : 'Import Google Calendar'}
+              color={calendarImported ? colors.success : colors.fieldLabel}
+              onPress={onToggleGoogleCalendar}
+              disabled={busy || calendarLoading}
             />
+            <Text style={styles.calendarStatus}>
+              {calendarImported
+                ? `Saved busy-time snapshot${calendarLastUpdated ? ` · updated ${calendarLastUpdated.toLocaleString()}` : ''}.`
+                : 'No calendar snapshot saved.'}
+            </Text>
+            <Text style={styles.calendarHint}>Imports the next 4 months of calendar data.</Text>
+            {calendarImported ? <PillButton label="Disconnect Google Calendar" color={colors.linkAccent} onPress={onDisconnectGoogleCalendar} disabled={busy || calendarLoading} /> : null}
             <PillButton label="Log Out" color={colors.danger} onPress={onLogOut} disabled={busy} />
             <PillButton
               label={busy ? 'Please wait...' : 'Delete Account'}
@@ -253,5 +387,9 @@ const styles = StyleSheet.create({
   pillIcon: { marginRight: spacing.xs },
   pillLabel: { ...text.body, fontSize: 16, lineHeight: 24 },
   error: { ...text.body, color: '#ff9aa8', textAlign: 'center', marginTop: spacing.md },
+  calendarStatus: { ...text.body, color: colors.white, opacity: 0.72, fontSize: 13, lineHeight: 19, textAlign: 'center', paddingHorizontal: spacing.md },
+  calendarHint: { ...text.body, color: colors.white, opacity: 0.56, fontSize: 12, lineHeight: 18, textAlign: 'center', paddingHorizontal: spacing.md },
+  statusRefresh: { alignItems: 'center', paddingVertical: spacing.xs },
+  statusRefreshText: { ...text.body, color: colors.linkAccent, fontSize: 13 },
   pressed: { opacity: 0.85 },
 });

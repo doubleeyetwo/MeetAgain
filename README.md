@@ -29,7 +29,11 @@ they next sign in with the updated app. Until then, friend search and lists
 show their username as a fallback. The updated Firestore rules must be
 published before the new friend actions can work in the live app.
 
-Google sign-in uses `src/features/auth/googleAuth.ts`; Calendar Freebusy remains future work. Local calendar access is intentionally left as a later stretch goal.
+Google sign-in uses `src/features/auth/googleAuth.ts`. The free Google Calendar
+import saves a busy/free snapshot, refreshes it manually, and automatically
+refreshes on app open or resume when a valid cached token and saved snapshot
+exist. It needs no Blaze plan or backend. See [Google Calendar setup](docs/google-calendar.md). Local
+calendar access remains a stretch goal.
 
 ## Google sign-in setup
 
