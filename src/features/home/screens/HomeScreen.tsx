@@ -25,6 +25,10 @@ import {
   type UpcomingEvent,
 } from '../components/UpcomingEventCard';
 
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { AppStackParamList } from '@/navigation/types';
+
 type SavedEvent = {
   title?: string;
   category?: string;
@@ -37,6 +41,9 @@ type SavedEvent = {
 
 export function HomeScreen() {
   const { user } = useAuth();
+
+const navigation =
+  useNavigation<NativeStackNavigationProp<AppStackParamList>>();
 
   const [upcomingEvents, setUpcomingEvents] = useState<
     UpcomingEvent[]
@@ -179,6 +186,11 @@ export function HomeScreen() {
               <UpcomingEventCard
                 key={event.id}
                 event={event}
+                onPress={(selectedEvent) => {
+                  navigation.navigate('EventDetails', {
+                    eventId: selectedEvent.id,
+                  });
+                }}
               />
             ))
           )}
