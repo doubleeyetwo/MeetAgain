@@ -253,6 +253,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
                 style={styles.dropdown}
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}
               >
                 {EVENT_CATEGORIES.map((item) => (
                   <Pressable
