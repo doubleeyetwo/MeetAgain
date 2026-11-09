@@ -10,6 +10,7 @@ import { MessagesNavigator } from '@/features/messages/navigation/MessagesNaviga
 import { EventCreationNavigator } from '@/features/events/navigation/EventCreationNavigator';
 import { CalendarViewScreen } from '@/features/calendar/screens/CalendarViewScreen';
 import { ProfileNavigator } from '@/features/profile/navigation/ProfileNavigator';
+import { UpcomingEventScreen } from '@/features/events/screens/UpcomingEventScreen';
 
 import { colors } from '@/theme';
 
@@ -182,6 +183,11 @@ export function AppNavigator() {
       <Stack.Screen
         name="MainTabs"
         component={MainTabs}
+      />
+
+      <Stack.Screen
+        name="EventDetails"
+        component={UpcomingEventScreen}
       />
     </Stack.Navigator>
   );

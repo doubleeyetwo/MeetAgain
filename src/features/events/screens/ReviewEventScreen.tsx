@@ -40,6 +40,7 @@ import {
 import { EditPhoto } from '@/components/EditPhoto';
 
 import { createEvent } from '@/features/events/eventService';
+import { getTemplate } from '@/features/events/eventTemplates';
 import { createGroup } from '@/features/messages/groups';
 import { getOrCreateDirectConversation } from '@/features/messages/directConversations';
 
@@ -110,17 +111,43 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   const [reminder, setReminder] = useState('24 hours before');
   const [reminderOpen, setReminderOpen] = useState(false);
 
-  const [items, setItems] = useState<EventItem[]>([]);
-  const [tasks, setTasks] = useState<EventTask[]>([]);
+  const [items, setItems] = useState<EventItem[]>(() => {
+    const template = getTemplate(route.params.presetId);
+
+    return (template?.items ?? []).map((name, index) => ({
+      id: -(index + 1),
+      name,
+      price: 0,
+      completed: false,
+      assigneeId: null,
+    }));
+  });
+
+  const [tasks, setTasks] = useState<EventTask[]>(() => {
+    const template = getTemplate(route.params.presetId);
+
+    return (template?.tasks ?? []).map((name, index) => ({
+      id: -(index + 1),
+      name,
+      completed: false,
+      assigneeId: null,
+    }));
+  });
 
   const [modalType, setModalType] = useState<AddType | null>(null);
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
+  const [editedPrice, setEditedPrice] = useState('');
 
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
   const [attendeePhotos, setAttendeePhotos] = useState<
     Record<string, string | null>
   >({});
+
+  const [attendeeNames, setAttendeeNames] = useState<Record<string, string>>({});
+  const [groupAdminIds, setGroupAdminIds] = useState<string[]>([]);
+  const [groupAdminLoaded, setGroupAdminLoaded] = useState(false);
 
   const [assignmentEntry, setAssignmentEntry] =
     useState<SelectedEntry | null>(null);
@@ -158,6 +185,36 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!matchingGroupId) {
+      setGroupAdminIds([]);
+      setGroupAdminLoaded(true);
+      return;
+    }
+    let active = true;
+    setGroupAdminLoaded(false);
+    getDoc(doc(db, 'groups', matchingGroupId))
+      .then((snapshot) => {
+        if (!active) return;
+        const ids = snapshot.data()?.adminIds;
+        setGroupAdminIds(Array.isArray(ids) ? ids : []);
+        setGroupAdminLoaded(true);
+      })
+      .catch(() => {
+        if (active) {
+          setGroupAdminIds([]);
+          setGroupAdminLoaded(true);
+        }
+      });
+    return () => { active = false; };
+  }, [matchingGroupId]);
+
+  // A newly created event is administered by its creator. For existing
+  // groups, respect the group's administrator list.
+  const canAssignOthers = !!user && (
+    !matchingGroupId || (groupAdminLoaded && groupAdminIds.includes(user.uid))
+  );
+
   const attendeeIds = [...new Set([
     ...(user?.uid ? [user.uid] : []),
     ...selectedMemberIds,
@@ -168,6 +225,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
     // Clear prior photos immediately when the selected attendees change.
     setAttendeePhotos({});
+    setAttendeeNames({});
 
     const loadAttendees = async () => {
       const otherIds = attendeeIds.filter((id) => id !== user?.uid);
@@ -175,16 +233,20 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         try {
           const snapshot = await getDoc(doc(db, 'publicProfiles', id));
           const profile = snapshot.exists() ? snapshot.data() : null;
-          return [
+          return {
             id,
-            profile?.photoDataUrl ?? profile?.photoURL ?? null,
-          ] as const;
+            photo: (profile?.photoDataUrl ?? profile?.photoURL ?? null) as string | null,
+            name: (profile?.displayName ?? 'Event participant') as string,
+          };
         } catch {
-          return [id, null] as const;
+          return { id, photo: null, name: 'Event participant' };
         }
       }));
 
-      if (active) setAttendeePhotos(Object.fromEntries(profiles));
+      if (active) {
+        setAttendeePhotos(Object.fromEntries(profiles.map((profile) => [profile.id, profile.photo])));
+        setAttendeeNames(Object.fromEntries(profiles.map((profile) => [profile.id, profile.name])));
+      }
     };
 
     void loadAttendees();
@@ -303,7 +365,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   const getAssigneeName = (assigneeId: string | null) => {
     if (!assigneeId) return 'Not assigned yet';
     if (assigneeId === user?.uid) return myName;
-    return 'Another member';
+    return attendeeNames[assigneeId] ?? 'Another member';
   };
 
   const isPressed = (type: AddType, id: number) =>
@@ -384,6 +446,44 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     );
   };
 
+  const openPriceEditor = (item: EventItem) => {
+  setEditingPriceId(item.id);
+  setEditedPrice(item.price.toFixed(2));
+};
+
+  const closePriceEditor = () => {
+    setEditingPriceId(null);
+    setEditedPrice('');
+  };
+
+  const saveEditedPrice = () => {
+    if (editingPriceId === null) return;
+
+    const price = Number(editedPrice.trim());
+
+    if (
+      !editedPrice.trim() ||
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      Alert.alert(
+        'Invalid Price',
+        'Enter a valid price of $0 or more.'
+      );
+      return;
+    }
+
+    setItems((current) =>
+      current.map((item) =>
+        item.id === editingPriceId
+          ? { ...item, price }
+          : item
+      )
+    );
+
+    closePriceEditor();
+  };
+
   const toggleTask = (id: number) => {
     setTasks((current) =>
       current.map((task) =>
@@ -394,34 +494,27 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     );
   };
 
-  const updateAssignment = (assign: boolean) => {
-    if (!user || !assignmentEntry) return;
+  const updateAssignment = (assigneeId: string | null) => {
+    if (!user || !assignmentEntry || !assignmentTarget) return;
+    const previousId = assignmentTarget.assigneeId;
+    const selfChange =
+      (previousId === null && assigneeId === user.uid) ||
+      (previousId === user.uid && assigneeId === null);
+    if (!canAssignOthers && !selfChange) {
+      Alert.alert('Not Allowed', 'Only an administrator can change another member’s assignment.');
+      return;
+    }
+    if (assigneeId !== null && !attendeeIds.includes(assigneeId)) return;
 
-    const update = <
-      T extends { id: number; assigneeId: string | null }
-    >(
-      entries: T[]
-    ): T[] =>
-      entries.map((entry) => {
-        if (entry.id !== assignmentEntry.id) return entry;
-
-        if (assign && entry.assigneeId === null) {
-          return { ...entry, assigneeId: user.uid };
-        }
-
-        if (!assign && entry.assigneeId === user.uid) {
-          return { ...entry, assigneeId: null };
-        }
-
-        return entry;
-      });
-
+    const update = <T extends { id: number; assigneeId: string | null }>(entries: T[]): T[] =>
+      entries.map((entry) =>
+        entry.id === assignmentEntry.id ? { ...entry, assigneeId } : entry
+      );
     if (assignmentEntry.type === 'item') {
       setItems((current) => update(current));
     } else {
       setTasks((current) => update(current));
     }
-
     setAssignmentEntry(null);
   };
 
@@ -455,9 +548,9 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         accessibilityRole="button"
         accessibilityLabel={`View assignment for ${type}`}
       >
-        {assigneeId === user?.uid && myPhoto ? (
+        {assigneeId && (assigneeId === user?.uid ? myPhoto : attendeePhotos[assigneeId]) ? (
           <Image
-            source={{ uri: myPhoto }}
+            source={{ uri: (assigneeId === user?.uid ? myPhoto : attendeePhotos[assigneeId])! }}
             style={styles.assigneePhoto}
           />
         ) : (
@@ -638,6 +731,7 @@ if (directConversationId) {
 
         <View style={styles.eventInfo}>
   <View style={styles.eventInfoLeft}>
+    
     {/* CATEGORY */}
     <Pressable
       onPress={() =>
@@ -750,6 +844,7 @@ if (directConversationId) {
           })}
         </ScrollView>
 
+      
         {/* REMINDER DROPDOWN */}
 
         <View style={styles.reminderContainer}>
@@ -828,12 +923,19 @@ if (directConversationId) {
             {renderAvatar('item', item.id, item.assigneeId)}
 
             <View style={styles.planningRight}>
-              <Text
-                style={styles.planningPrice}
-                numberOfLines={1}
+              <Pressable
+                onPress={() => openPriceEditor(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit price for ${item.name}`}
+                hitSlop={8}
               >
-                {formatPrice(item.price)}
-              </Text>
+                <Text
+                  style={styles.planningPrice}
+                  numberOfLines={1}
+                >
+                  {formatPrice(item.price)}
+                </Text>
+              </Pressable>
 
               <Pressable
                 onPress={() => toggleItem(item.id)}
@@ -956,24 +1058,85 @@ if (directConversationId) {
 
       {/* CONFIRM EVENT */}
 
-      <View style={styles.confirmContainer}>
-        <Pressable
-          onPress={() => void handleConfirmEvent()}
-          disabled={savingEvent}
-          style={styles.confirmButton}
+      <Pressable
+        onPress={handleConfirmEvent}
+        disabled={savingEvent}
+      >
+        <LinearGradient
+          colors={gradients.purpleAccent}
+          start={gradientDirection.horizontal.start}
+          end={gradientDirection.horizontal.end}
+          style={styles.confirmGradient}
         >
-          <LinearGradient
-            colors={gradients.purpleAccent}
-            start={gradientDirection.horizontal.start}
-            end={gradientDirection.horizontal.end}
-            style={styles.confirmGradient}
-          >
-            <Text style={styles.confirmText}>
-              Confirm Event
+          <Text style={styles.confirmText}>
+            Confirm Event
+          </Text>
+        </LinearGradient>
+      </Pressable>
+        
+      {/* EDIT ITEM PRICE MODAL */}
+
+      <Modal
+        visible={editingPriceId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closePriceEditor}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              Edit Item Price
             </Text>
-          </LinearGradient>
-        </Pressable>
-      </View>
+
+            <TextInput
+              style={styles.modalInput}
+              value={editedPrice}
+              onChangeText={setEditedPrice}
+              placeholder="Price ($)"
+              placeholderTextColor={colors.white}
+              keyboardType="decimal-pad"
+              selectTextOnFocus
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.cancelButton}
+                onPress={closePriceEditor}
+              >
+                <Text style={styles.modalActionText}>
+                  Cancel
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  backgroundColor: colors.cardDarker,
+                  paddingHorizontal: 24,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  minWidth: 90,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={saveEditedPrice}
+              >
+                <Text
+                  style={[
+                    styles.modalActionText,
+                    { color: '#f8f5f5' },
+                  ]}
+                >
+                  Save
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    
 
       {/* ADD ITEM / TASK MODAL */}
 
@@ -1067,10 +1230,14 @@ if (directConversationId) {
 
             <View style={styles.assignmentProfile}>
               <View style={styles.assignmentAvatar}>
-                {assignmentTarget?.assigneeId ===
-                  user?.uid && myPhoto ? (
+                {assignmentTarget?.assigneeId &&
+                  (assignmentTarget.assigneeId === user?.uid
+                    ? myPhoto
+                    : attendeePhotos[assignmentTarget.assigneeId]) ? (
                   <Image
-                    source={{ uri: myPhoto }}
+                    source={{ uri: (assignmentTarget.assigneeId === user?.uid
+                      ? myPhoto
+                      : attendeePhotos[assignmentTarget.assigneeId])! }}
                     style={styles.assignmentPhoto}
                   />
                 ) : (
@@ -1096,40 +1263,87 @@ if (directConversationId) {
             {assignmentTarget?.assigneeId === user?.uid ? (
               <Pressable
                 style={styles.assignmentOption}
-                onPress={() =>
-                  updateAssignment(false)
-                }
+                onPress={() => updateAssignment(null)}
               >
-                <Ionicons
-                  name="person-remove-outline"
-                  size={22}
-                  color={colors.white}
-                />
-                <Text style={styles.modalActionText}>
-                  Unassign myself
-                </Text>
+                <Ionicons name="person-remove-outline" size={22} color={colors.white} />
+                <Text style={styles.modalActionText}>Unassign myself</Text>
               </Pressable>
-            ) : !assignmentTarget?.assigneeId ? (
+            ) : !assignmentTarget?.assigneeId || canAssignOthers ? (
               <Pressable
                 style={styles.assignmentOption}
-                onPress={() =>
-                  updateAssignment(true)
-                }
+                onPress={() => user && updateAssignment(user.uid)}
                 disabled={!user}
               >
-                <Ionicons
-                  name="person-add-outline"
-                  size={22}
-                  color={colors.white}
-                />
-                <Text style={styles.modalActionText}>
-                  Assign to myself
-                </Text>
+                <Ionicons name="person-add-outline" size={22} color={colors.white} />
+                <Text style={styles.modalActionText}>Assign to myself</Text>
               </Pressable>
             ) : (
               <Text style={styles.assignmentLabel}>
                 This is assigned to another member.
               </Text>
+            )}
+
+            {canAssignOthers && (
+              <>
+                <Text style={styles.assignmentLabel}>Assign to a participant</Text>
+                <ScrollView
+                  style={styles.assignmentMemberList}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={false}
+                >
+                  {attendeeIds
+                    .filter((id) => id !== user?.uid)
+                    .map((id) => {
+                      const photo = attendeePhotos[id];
+                      return (
+                        <Pressable
+                          key={id}
+                          style={styles.assignmentMemberOption}
+                          onPress={() => updateAssignment(id)}
+                        >
+                          {photo ? (
+                            <Image
+                              source={{ uri: photo }}
+                              style={styles.assignmentMemberPhoto}
+                            />
+                          ) : (
+                            <Ionicons
+                              name="person-circle-outline"
+                              size={32}
+                              color={colors.white}
+                            />
+                          )}
+                          <Text style={styles.assignmentMemberName}>
+                            {attendeeNames[id] ?? 'Event participant'}
+                          </Text>
+                          {assignmentTarget?.assigneeId === id && (
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={21}
+                              color={colors.white}
+                            />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                </ScrollView>
+                {assignmentTarget?.assigneeId &&
+                  assignmentTarget.assigneeId !== user?.uid && (
+                    <Pressable
+                      style={styles.assignmentOption}
+                      onPress={() => updateAssignment(null)}
+                    >
+                      <Ionicons
+                        name="person-remove-outline"
+                        size={22}
+                        color={colors.white}
+                      />
+                      <Text style={styles.modalActionText}>
+                        Unassign participant
+                      </Text>
+                    </Pressable>
+                  )}
+              </>
             )}
 
             <Pressable
@@ -1661,6 +1875,29 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
+  assignmentMemberList: {
+    maxHeight: 230,
+  },
+  assignmentMemberOption: {
+    backgroundColor: colors.cardLighter,
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  assignmentMemberPhoto: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  assignmentMemberName: {
+    flex: 1,
+    color: colors.white,
+    fontFamily: fontFamily.regular,
+    fontSize: 15,
+  },
   assignmentCancelButton: {
     height: 46,
     borderRadius: 12,

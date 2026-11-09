@@ -25,6 +25,7 @@ import { colors, fontFamily, radius, spacing } from '@/theme';
 import { EditPhoto } from '@/components/EditPhoto';
 
 
+import { getTemplate } from '@/features/events/eventTemplates';
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
 type Props = NativeStackScreenProps<
@@ -186,7 +187,10 @@ export function CreateEventScreen({ navigation, route }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScreenHeader
-        title="Add Custom Event"
+        title={
+          getTemplate(route.params?.presetId)?.name ??
+          'Add Custom Event'
+        }
         onBack={() => navigation.goBack()}
       />
 
@@ -249,6 +253,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
                 style={styles.dropdown}
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}
               >
                 {EVENT_CATEGORIES.map((item) => (
                   <Pressable

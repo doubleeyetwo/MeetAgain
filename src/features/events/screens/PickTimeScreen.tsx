@@ -79,8 +79,7 @@ export function PickTimeScreen({
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+        showsVerticalScrollIndicator={false}        >
         {/* The availability calendar and heat map go above the time card. */}
 
         <View style={styles.timeCard}>
