@@ -16,6 +16,7 @@ export const colors = {
   footer: '#17121f',
   headerFade: 'rgba(23, 18, 31, 0)', // Transparent end of the header gradient.
   red: '#ff3131', // Bright Neon red for deletions, exits, logouts, etc
+  online: '#4ce417', // Neon green dot on an available MeetNow avatar.
 
   // Lighter green indicates more available time.
   freeDay: {
