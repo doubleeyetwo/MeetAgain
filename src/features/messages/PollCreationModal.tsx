@@ -14,13 +14,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
+import { Dropdown } from '@/components/Dropdown';
 import {
+  DEFAULT_POLL_DURATION_HOURS,
   MAX_POLL_OPTIONS,
   MAX_POLL_OPTION_LENGTH,
   MAX_POLL_QUESTION_LENGTH,
   MIN_POLL_OPTIONS,
+  POLL_DURATIONS,
   normalizePollDraft,
 } from '@/features/messages/polls';
+
+const durationOptions = POLL_DURATIONS.map(({ hours, label }) => ({ label, value: hours }));
 
 type AnswerField = { key: number; text: string };
 
@@ -31,11 +36,12 @@ function blankAnswers(): AnswerField[] {
 export function PollCreationModal({ visible, onClose, onPost }: {
   visible: boolean;
   onClose: () => void;
-  // Receives the trimmed question and non-blank answers; reject to keep the pop-up open.
-  onPost: (question: string, options: string[]) => Promise<void>;
+  // Receives the trimmed question, non-blank answers, and Poll Timer; reject to keep the pop-up open.
+  onPost: (question: string, options: string[], durationHours: number) => Promise<void>;
 }) {
   const [question, setQuestion] = useState('');
   const [answers, setAnswers] = useState<AnswerField[]>(blankAnswers);
+  const [durationHours, setDurationHours] = useState(DEFAULT_POLL_DURATION_HOURS);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   // Stable keys keep each TextInput attached to its answer when another row is removed.
@@ -51,6 +57,7 @@ export function PollCreationModal({ visible, onClose, onPost }: {
   function reset() {
     setQuestion('');
     setAnswers(blankAnswers());
+    setDurationHours(DEFAULT_POLL_DURATION_HOURS);
     setPostError(null);
     nextKey.current = MIN_POLL_OPTIONS;
   }
@@ -84,7 +91,7 @@ export function PollCreationModal({ visible, onClose, onPost }: {
     setPostError(null);
 
     try {
-      await onPost(draft.question, draft.options);
+      await onPost(draft.question, draft.options, durationHours);
       reset();
       onClose();
     }
@@ -174,6 +181,17 @@ export function PollCreationModal({ visible, onClose, onPost }: {
           </ScrollView>
 
           <View style={styles.divider} />
+          <View style={styles.timerRow}>
+            <Text style={styles.timerLabel}>Poll Timer</Text>
+            <Dropdown
+              accessibilityLabel="Poll Timer"
+              displayText={durationOptions.find((option) => option.value === durationHours)?.label ?? ''}
+              options={durationOptions}
+              value={durationHours}
+              onChange={setDurationHours}
+              style={styles.timerDropdown}
+            />
+          </View>
           {postError !== null ? (
             <Text accessibilityRole="alert" style={styles.error}>{postError}</Text>
           ) : requiredFilled && draft.problem !== null ? (
@@ -219,6 +237,9 @@ const styles = StyleSheet.create({
   answerInput: { flex: 1 },
   removeButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   addButton: { alignSelf: 'center', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  timerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  timerLabel: { ...text.body, color: colors.white },
+  timerDropdown: { flex: 1 },
   error: { ...text.body, color: '#FFB4AB', textAlign: 'center' },
   postButton: { height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   postText: { ...text.body, fontSize: 16, color: colors.white },

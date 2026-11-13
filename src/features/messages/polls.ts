@@ -15,6 +15,20 @@ export const MAX_POLL_OPTIONS = 6;
 export const MAX_POLL_QUESTION_LENGTH = 200;
 export const MAX_POLL_OPTION_LENGTH = 80;
 
+// The Poll Timer choices. Firestore rules accept only these hour values.
+export const POLL_DURATIONS = [
+  { hours: 1, label: '1 hour' },
+  { hours: 6, label: '6 hours' },
+  { hours: 12, label: '12 hours' },
+  { hours: 24, label: '24 hours' },
+  { hours: 72, label: '3 days' },
+  { hours: 168, label: '1 week' },
+];
+export const DEFAULT_POLL_DURATION_HOURS = 24;
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+
 export type PollDraft = {
   question: string;
   options: string[];
@@ -30,6 +44,10 @@ export type GroupPoll = {
   options: string[];
   // Each member's chosen option index, keyed by user ID.
   votes: Record<string, number>;
+  // How long the poll runs from createdAt. Polls posted before timers existed have none.
+  durationHours?: number;
+  // Set when the creator ends the poll early; null while that write is still pending.
+  endedAt?: Timestamp | null;
   createdAt: Timestamp | null;
 };
 
@@ -70,10 +88,14 @@ export async function sendGroupPoll(
   senderId: string,
   question: string,
   options: string[],
+  durationHours: number,
 ): Promise<void> {
   const draft = normalizePollDraft(question, options);
   if (draft.problem) {
     throw new Error(draft.problem);
+  }
+  if (!POLL_DURATIONS.some((option) => option.hours === durationHours)) {
+    throw new Error('Choose how long the poll runs.');
   }
 
   // The poll holds the votes; a message with the same ID places it in the chat timeline.
@@ -87,6 +109,7 @@ export async function sendGroupPoll(
     question: draft.question,
     options: draft.options,
     votes: {},
+    durationHours,
     createdAt,
   });
   batch.set(messageRef, {
@@ -124,6 +147,41 @@ export async function castPollVote(
   await updateDoc(doc(db, 'groups', groupId, 'polls', pollId), {
     [`votes.${voterId}`]: optionIndex,
   });
+}
+
+export async function endPoll(groupId: string, pollId: string): Promise<void> {
+  // Firestore rules let only the poll's creator end it, and only while it is open.
+  await updateDoc(doc(db, 'groups', groupId, 'polls', pollId), { endedAt: serverTimestamp() });
+}
+
+// When the poll's timer runs out, or null for a poll without a timer.
+export function pollEndsAt(poll: GroupPoll, now: number): number | null {
+  if (!poll.durationHours) return null;
+  // A poll that was just posted has no server time yet, so its timer starts now.
+  const startedAt = poll.createdAt ? poll.createdAt.toMillis() : now;
+  return startedAt + poll.durationHours * HOUR_MS;
+}
+
+export function isPollOpen(poll: GroupPoll, now: number): boolean {
+  if (poll.endedAt !== undefined) return false;
+  const endsAt = pollEndsAt(poll, now);
+  return endsAt === null || now < endsAt;
+}
+
+function formatTimeRemaining(ms: number): string {
+  const minutes = Math.floor(ms / MINUTE_MS);
+  if (minutes < 1) return 'Less than a minute remaining';
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} remaining`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} ${hours === 1 ? 'hour' : 'hours'} remaining`;
+  return `${Math.floor(hours / 24)} days remaining`;
+}
+
+// The countdown members see, or null for an open poll without a timer.
+export function pollTimeLabel(poll: GroupPoll, now: number): string | null {
+  if (!isPollOpen(poll, now)) return 'Poll ended';
+  const endsAt = pollEndsAt(poll, now);
+  return endsAt === null ? null : formatTimeRemaining(endsAt - now);
 }
 
 export function tallyPoll(options: string[], votes: Record<string, number>): PollTally {

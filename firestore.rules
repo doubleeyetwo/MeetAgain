@@ -627,10 +627,12 @@ service cloud.firestore {
           function validNewPoll() {
             let poll = request.resource.data;
 
-            return poll.keys().hasAll(['createdBy', 'question', 'options', 'votes', 'createdAt'])
-            && poll.keys().hasOnly(['createdBy', 'question', 'options', 'votes', 'createdAt'])
+            return poll.keys().hasAll(['createdBy', 'question', 'options', 'votes', 'durationHours', 'createdAt'])
+            && poll.keys().hasOnly(['createdBy', 'question', 'options', 'votes', 'durationHours', 'createdAt'])
             && poll.createdBy == request.auth.uid
             && poll.votes == {}
+            // Keep these Poll Timer choices in sync with POLL_DURATIONS in polls.ts.
+            && poll.durationHours in [1, 6, 12, 24, 72, 168]
             && poll.createdAt == request.time
             // The message rules validate the question and answers, so the poll must match them.
             && pollMessage().type == 'poll'
@@ -650,9 +652,25 @@ service cloud.firestore {
             && choice < resource.data.options.size();
           }
 
+          // A poll closes when its creator ends it or its timer runs out.
+          // Polls posted before timers existed have no durationHours and stay open until ended.
+          function pollOpen() {
+            let poll = resource.data;
+
+            return !poll.keys().hasAny(['endedAt'])
+            && (!poll.keys().hasAny(['durationHours'])
+              || request.time < poll.createdAt + duration.value(poll.durationHours, 'h'));
+          }
+
+          function validEnd() {
+            return request.auth.uid == resource.data.createdBy
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['endedAt'])
+            && request.resource.data.endedAt == request.time;
+          }
+
           allow read: if isGroupMember();
           allow create: if isGroupMember() && !groupDeleting() && validNewPoll();
-          allow update: if isGroupMember() && !groupDeleting() && validVote();
+          allow update: if isGroupMember() && !groupDeleting() && pollOpen() && (validVote() || validEnd());
           allow delete: if isGroupMember() && groupDeleting()
             && request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy;
         }
@@ -762,9 +780,105 @@ service cloud.firestore {
       }
       allow get, list: if isParticipant() || isDeletingGroupOwner();
       allow create: if signedIn() && validEvent();
-      // Editing and RSVP updates will be implemented separately.
-      allow update: if false;
+      // Planning edits from UpcomingEventScreen / eventEditingService.
+      // No event identity, schedule, participant or RSVP fields can change.
+      function planningFieldsOnly() {
+        let changes = request.resource.data.diff(resource.data).affectedKeys();
+        return request.resource.data.updatedAt == request.time
+          && changes.hasOnly(['items', 'tasks', 'updatedAt'])
+          && changes.hasAny(['items', 'tasks']);
+      }
+
+      function isEventAdmin() {
+        return (resource.data.get('groupId', null) == null
+            && resource.data.creatorId == request.auth.uid)
+          || (resource.data.get('groupId', null) is string
+            && exists(/databases/$(database)/documents/groups/$(resource.data.groupId))
+            && get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.get('deleting', false) == false
+            && request.auth.uid in get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.adminIds);
+      }
+
+      // Admins can edit entire planning lists in one atomic Save.
+      // Entry-level checks are performed by eventEditingService.ts.
+      // IMPORTANT: rules do not independently validate entry shapes here.
+      function validAdminPlanningEdit() {
+        return request.resource.data.get('items', []) is list
+          && request.resource.data.get('tasks', []) is list
+          && request.resource.data.get('items', []).size() <= 20
+          && request.resource.data.get('tasks', []).size() <= 20;
+      }
+
+      // A member can only change their own assigneeId (null <-> own UID).
+      // Unchanged entries short-circuit to reduce rule evaluations.
+      function validSelfAssignmentAt(before, after, index) {
+        return before.size() <= index
+          || before[index] == after[index]
+          || (before[index] is map
+            && after[index] is map
+            && before[index].keys().hasAll(['id', 'assigneeId'])
+            && after[index].keys().hasAll(['id', 'assigneeId'])
+            && before[index].id == after[index].id
+            && after[index].diff(before[index]).affectedKeys().hasOnly(['assigneeId'])
+            && ((before[index].assigneeId == null && after[index].assigneeId == request.auth.uid)
+              || (before[index].assigneeId == request.auth.uid && after[index].assigneeId == null)));
+      }
+
+      function validSelfAssignmentList(before, after) {
+        return before is list && after is list
+          && before.size() == after.size()
+          && before.size() <= 20
+          && (before == after || (
+            validSelfAssignmentAt(before, after, 0) &&
+            validSelfAssignmentAt(before, after, 1) &&
+            validSelfAssignmentAt(before, after, 2) &&
+            validSelfAssignmentAt(before, after, 3) &&
+            validSelfAssignmentAt(before, after, 4) &&
+            validSelfAssignmentAt(before, after, 5) &&
+            validSelfAssignmentAt(before, after, 6) &&
+            validSelfAssignmentAt(before, after, 7) &&
+            validSelfAssignmentAt(before, after, 8) &&
+            validSelfAssignmentAt(before, after, 9) &&
+            validSelfAssignmentAt(before, after, 10) &&
+            validSelfAssignmentAt(before, after, 11) &&
+            validSelfAssignmentAt(before, after, 12) &&
+            validSelfAssignmentAt(before, after, 13) &&
+            validSelfAssignmentAt(before, after, 14) &&
+            validSelfAssignmentAt(before, after, 15) &&
+            validSelfAssignmentAt(before, after, 16) &&
+            validSelfAssignmentAt(before, after, 17) &&
+            validSelfAssignmentAt(before, after, 18) &&
+            validSelfAssignmentAt(before, after, 19)));
+      }
+
+      function validParticipantPlanningEdit() {
+        return validSelfAssignmentList(
+            resource.data.get('items', []), request.resource.data.get('items', []))
+          && validSelfAssignmentList(
+            resource.data.get('tasks', []), request.resource.data.get('tasks', []));
+      }
+
+      allow update: if isParticipant()
+        && planningFieldsOnly()
+        && ((isEventAdmin() && validAdminPlanningEdit())
+          || validParticipantPlanningEdit());
       allow delete: if isDeletingGroupOwner();
+    }
+    match /calendarImports/{userId} {
+      function validCalendarSnapshot() {
+        return request.resource.data.keys().hasAll(['rangeStart', 'rangeEnd', 'busy', 'lastUpdated'])
+          && request.resource.data.keys().hasOnly(['rangeStart', 'rangeEnd', 'busy', 'lastUpdated'])
+          && request.resource.data.rangeStart is timestamp
+          && request.resource.data.rangeEnd is timestamp
+          && request.resource.data.rangeEnd > request.resource.data.rangeStart
+          && request.resource.data.busy is list
+          && request.resource.data.busy.size() <= 1000
+          && request.resource.data.lastUpdated == request.time;
+      }
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && validCalendarSnapshot();
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
     match /{document=**} {
       allow read, write: if false;

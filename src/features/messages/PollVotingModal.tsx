@@ -4,11 +4,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import type { GroupPollMessage } from '@/features/messages/messages';
-import { castPollVote, tallyPoll } from '@/features/messages/polls';
+import { castPollVote, endPoll, isPollOpen, pollTimeLabel, tallyPoll } from '@/features/messages/polls';
 import { PollResultsChart } from '@/features/messages/PollResultsChart';
+import { useNow } from '@/features/messages/useNow';
 import { usePoll } from '@/features/messages/usePoll';
 
 // Opens on "Time to Vote" and switches to the live results after a vote is saved.
+// A poll that has ended opens straight to its final results.
 export function PollVotingModal({ groupId, poll, voterId, onClose }: {
   groupId: string;
   poll: GroupPollMessage;
@@ -16,17 +18,26 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
   onClose: () => void;
 }) {
   const { poll: pollDoc, loading, error: loadError } = usePoll(groupId, poll.id);
+  const now = useNow();
   const [view, setView] = useState<'vote' | 'results'>('vote');
   const [selected, setSelected] = useState<number | null>(null);
   const [voting, setVoting] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
-  // A ref blocks a second tap before the voting state re-renders the button.
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
+  // Refs block a second tap before the busy state re-renders the buttons.
   const votingRef = useRef(false);
+  const endingRef = useRef(false);
 
+  const open = !!pollDoc && isPollOpen(pollDoc, now);
+  const timeLabel = pollDoc ? pollTimeLabel(pollDoc, now) : null;
+  const isCreator = pollDoc?.createdBy === voterId;
+  const showResults = view === 'results' || (!!pollDoc && !open);
   const currentVote = pollDoc?.votes[voterId];
   // Start from the member's saved vote so voting again replaces it.
   const choice = selected ?? currentVote ?? null;
-  const canVote = !!pollDoc && choice !== null && !voting;
+  const canVote = open && choice !== null && !voting && !ending;
   const tally = tallyPoll(poll.options, pollDoc?.votes ?? {});
 
   let status: string | null = null;
@@ -35,7 +46,7 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
   else if (currentVote !== undefined) status = `You voted for ${poll.options[currentVote] ?? 'an answer'}. Pick again to change your vote.`;
 
   async function handleVote() {
-    if (votingRef.current || !pollDoc || choice === null) return;
+    if (votingRef.current || !open || choice === null) return;
     votingRef.current = true;
     setVoting(true);
     setVoteError(null);
@@ -55,9 +66,29 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
     }
   }
 
+  async function handleEnd() {
+    if (endingRef.current || !open || !isCreator) return;
+    endingRef.current = true;
+    setEnding(true);
+    setEndError(null);
+
+    try {
+      await endPoll(groupId, poll.id);
+      setConfirmingEnd(false);
+      setView('results');
+    }
+    catch (error) {
+      setEndError(error instanceof Error ? error.message : 'Could not end the poll.');
+    }
+    finally {
+      endingRef.current = false;
+      setEnding(false);
+    }
+  }
+
   function handleClose() {
-    // A vote in flight still lands, so wait for it rather than leaving a stale pop-up state.
-    if (votingRef.current) return;
+    // A write in flight still lands, so wait for it rather than leaving a stale pop-up state.
+    if (votingRef.current || endingRef.current) return;
     onClose();
   }
 
@@ -65,18 +96,66 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
   if (tally.winners.length === 1) winner = poll.options[tally.winners[0]];
   else if (tally.winners.length > 1) winner = `Tie: ${tally.winners.map((index) => poll.options[index]).join(', ')}`;
 
+  const timer = timeLabel !== null ? (
+    <View style={styles.timerRow}>
+      <Ionicons name="time-outline" size={16} color={colors.white} />
+      <Text style={styles.status}>{timeLabel}</Text>
+    </View>
+  ) : null;
+
+  // Only the poll's creator can end it early, and ending asks once more because it can't be undone.
+  let endControls = null;
+  if (isCreator && open) {
+    endControls = confirmingEnd ? (
+      <View style={styles.confirmEnd}>
+        <Text style={styles.status}>End this poll for everyone? No one will be able to vote after this.</Text>
+        <View style={styles.confirmActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Keep poll open"
+            disabled={ending}
+            onPress={() => setConfirmingEnd(false)}
+            style={styles.textButton}
+          >
+            <Text style={styles.linkText}>Keep Open</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Confirm end poll"
+            disabled={ending}
+            onPress={handleEnd}
+            style={styles.textButton}
+          >
+            {ending ? <ActivityIndicator color={colors.red} /> : <Text style={styles.endText}>End Poll</Text>}
+          </Pressable>
+        </View>
+      </View>
+    ) : (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="End poll"
+        hitSlop={8}
+        disabled={voting}
+        onPress={() => setConfirmingEnd(true)}
+        style={styles.textButton}
+      >
+        <Text style={styles.endText}>End Poll</Text>
+      </Pressable>
+    );
+  }
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
         <View style={styles.card}>
           <View style={styles.titleRow}>
             <View style={styles.titleSide} />
-            <Text style={styles.title}>{view === 'vote' ? 'Time to Vote' : 'Poll Results'}</Text>
+            <Text style={styles.title}>{showResults ? 'Poll Results' : 'Time to Vote'}</Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close poll"
               hitSlop={12}
-              disabled={voting}
+              disabled={voting || ending}
               onPress={handleClose}
               style={styles.titleSide}
             >
@@ -85,7 +164,7 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
           </View>
           <View style={styles.divider} />
 
-          {view === 'vote' ? (
+          {!showResults ? (
             <>
               <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
                 <View style={styles.questionBox}>
@@ -100,8 +179,8 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
                       key={index}
                       accessibilityRole="radio"
                       accessibilityLabel={option}
-                      accessibilityState={{ selected: isSelected, disabled: !pollDoc || voting }}
-                      disabled={!pollDoc || voting}
+                      accessibilityState={{ selected: isSelected, disabled: !open || voting }}
+                      disabled={!open || voting}
                       onPress={() => setSelected(index)}
                       style={[styles.option, isSelected && styles.optionSelected]}
                     >
@@ -128,6 +207,7 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
                   {voting ? <ActivityIndicator color={colors.white} /> : <Text style={styles.voteText}>Vote</Text>}
                 </LinearGradient>
               </Pressable>
+              {timer}
             </>
           ) : (
             <>
@@ -136,23 +216,28 @@ export function PollVotingModal({ groupId, poll, voterId, onClose }: {
               <Text style={styles.status}>
                 {tally.total} {tally.total === 1 ? 'vote' : 'votes'} total
               </Text>
+              {timer}
               <View style={styles.divider} />
-              <Text style={styles.sectionTitle}>Current Winner</Text>
+              <Text style={styles.sectionTitle}>{open ? 'Current Winner' : 'Winner'}</Text>
               <Text style={styles.winner}>{winner}</Text>
               {tally.winners.length > 0 ? (
                 <Text style={styles.status}>{tally.percentages[tally.winners[0]]}% of votes</Text>
               ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Change vote"
-                hitSlop={8}
-                onPress={() => setView('vote')}
-                style={styles.changeVote}
-              >
-                <Text style={styles.changeVoteText}>Change vote</Text>
-              </Pressable>
+              {open ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Change vote"
+                  hitSlop={8}
+                  onPress={() => setView('vote')}
+                  style={styles.textButton}
+                >
+                  <Text style={styles.linkText}>Change vote</Text>
+                </Pressable>
+              ) : null}
             </>
           )}
+          {endControls}
+          {endError !== null ? <Text accessibilityRole="alert" style={styles.error}>{endError}</Text> : null}
         </View>
       </View>
     </Modal>
@@ -180,6 +265,10 @@ const styles = StyleSheet.create({
   voteText: { ...text.body, fontSize: 16, color: colors.white },
   disabled: { opacity: 0.4 },
   winner: { ...text.title, color: colors.white, textAlign: 'center' },
-  changeVote: { alignSelf: 'center', paddingVertical: spacing.xs },
-  changeVoteText: { ...text.body, color: colors.linkAccent },
+  timerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  textButton: { alignSelf: 'center', minHeight: 32, justifyContent: 'center', paddingHorizontal: spacing.sm },
+  linkText: { ...text.body, color: colors.linkAccent },
+  endText: { ...text.body, fontSize: 16, color: colors.red },
+  confirmEnd: { gap: spacing.xs },
+  confirmActions: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg },
 });

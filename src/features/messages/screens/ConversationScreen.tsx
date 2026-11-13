@@ -372,12 +372,12 @@ useEffect(() => {
     setPollOpen(true);
   }
 
-  async function handlePostPoll(question: string, options: string[]) {
+  async function handlePostPoll(question: string, options: string[], durationHours: number) {
     // PollCreationModal shows a thrown error and keeps the entered text.
     if (!user) throw new Error('Sign in before posting a poll.');
     if (!canPostToGroup) throw new Error('Polls are only available in group chats.');
     if (!groupReady) throw new Error('This group is unavailable.');
-    await sendGroupPoll(groupId!, user.uid, question, options);
+    await sendGroupPoll(groupId!, user.uid, question, options, durationHours);
   }
 
   return (
