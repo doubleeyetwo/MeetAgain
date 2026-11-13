@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, TextInput } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, View, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,7 +43,6 @@ export function ConversationScreen({ navigation, route }: Props) {
   // Find the participant whose UID differs from the signed-in user's
   const otherUid = memberIds.find((uid) => uid !== user?.uid);
   const [profiles, setProfiles] = useState<Record<string, PublicProfile>>({});
-  const [loading, setLoading] = useState(kind === 'group');
   const [sendError, setSendError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -64,16 +63,18 @@ export function ConversationScreen({ navigation, route }: Props) {
   const [pollOpen, setPollOpen] = useState(false);
   const [votingPoll, setVotingPoll] = useState<GroupPollMessage | null>(null);
   const canPostToGroup = kind === 'group' && !!groupId;
-  const [groupAccess, setGroupAccess] = useState<{ key: string; state: 'checking' | 'ready' | 'cleanup' | 'unavailable' }>({ key: conversationKey, state: 'checking' });
+  const [groupAccess, setGroupAccess] = useState<{ key: string; state: 'checking' | 'ready' | 'cleanup' | 'unavailable', photoUri?: string }>({ key: conversationKey, state: 'checking' });
   const groupReady = kind !== 'group' || (groupAccess.key === conversationKey && groupAccess.state === 'ready');
   const [groupEvents, setGroupEvents] = useState<
   {
+    creatorId: string;
     id: string;
     title: string;
     startAt: Date;
     endAt: Date;
     location?: string;
     photoURL?: string | null;
+    createdAtMs: number | null
   }[]
 >([]);
 
@@ -99,10 +100,12 @@ useEffect(() => {
           const data = eventDoc.data();
 
           return {
+            creatorId: data.creatorId,
             id: eventDoc.id,
             title: data.title,
             startAt: data.startAt.toDate(),
             endAt: data.endAt.toDate(),
+            createdAtMs: data.createdAt?.toMillis() ?? null,
             location: data.location,
             photoURL: data.photoURL,
           };
@@ -138,7 +141,13 @@ useEffect(() => {
       if (!subscribed) return;
       if (!nextGroup || !nextGroup.memberIds.includes(user.uid)) redirect('unavailable');
       else if (nextGroup.deleting) redirect(nextGroup.createdBy === user.uid ? 'cleanup' : 'unavailable');
-      else setGroupAccess({ key, state: 'ready' });
+      else {
+        setGroupAccess({
+          key,
+          state: 'ready',
+          photoUri: nextGroup.photoDataUrl,
+        });
+      }
     }, () => redirect('unavailable'));
     return () => { subscribed = false; unsubscribe(); };
   }, [kind, groupId, user?.uid, conversationKey, navigation]);
@@ -178,12 +187,16 @@ useEffect(() => {
   // Also block composition while signed out or while a message write is pending.
   const composerDisabled = !user || sending || directComposerDisabled || !groupReady;
 
+  // Sort and deduplicate sender IDs so new messages from the same senders reuse the profiles.
+  const profileIdsKey = JSON.stringify([...new Set([
+  ...messages.map((message) => message.senderId),
+  ...groupEvents.map((event) => event.creatorId),
+])].sort());
   useEffect(() => {
     let active = true;
-    if (kind !== 'group' || !user) { setLoading(false); setProfiles({}); return; }
-    setLoading(true);
-    const otherIds = memberIds.filter((uid) => uid !== user.uid);
-    void Promise.all(otherIds.map(async (uid) => {
+    if (!user) { setProfiles({}); return; }
+    const senderIds: string[] = JSON.parse(profileIdsKey);
+    void Promise.all(senderIds.map(async (uid) => {
       try {
         const snapshot = await getDoc(doc(db, collections.publicProfiles, uid));
         return snapshot.exists() ? [uid, { id: snapshot.id, ...snapshot.data() } as PublicProfile] as const : null;
@@ -191,12 +204,12 @@ useEffect(() => {
         return null;
       }
     })).then((entries) => {
+      // A profile request from a previous conversation may finish after navigation.
       if (!active) return;
       setProfiles(Object.fromEntries(entries.filter((entry): entry is readonly [string, PublicProfile] => entry !== null)));
-      setLoading(false);
     });
     return () => { active = false; };
-  }, [kind, memberIds.join('|'), user?.uid]);
+  }, [profileIdsKey, conversationKey, user?.uid]);
 
   useEffect(() => {
     setMessages([]);
@@ -380,6 +393,29 @@ useEffect(() => {
     await sendGroupPoll(groupId!, user.uid, question, options);
   }
 
+  const groupPhotoUri = groupReady ? groupAccess.photoUri : undefined;
+  const timeline = [
+    ...messages.map((message) => ({
+      kind: 'message' as const,
+      key: `message:${message.id}`,
+      createdAtMs: message.createdAt?.toMillis() ?? null,
+      message,
+    })),
+    ...groupEvents.map((event) => ({
+      kind: 'event' as const,
+      key: `event:${event.id}`,
+      createdAtMs: event.createdAtMs,
+      event,
+    })),
+  ].sort((left, right) => {
+    const leftTime = left.createdAtMs ?? Number.POSITIVE_INFINITY;
+    const rightTime = right.createdAtMs ?? Number.POSITIVE_INFINITY;
+
+    if (leftTime === rightTime) return 0;
+    return leftTime > rightTime ? -1 : 1;
+  });
+
+  // Sort newest first. Decide where rows with a null timestamp should go.
   return (
     <LinearGradient colors={gradients.background} {...gradientDirection.vertical} style={styles.root}>
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
@@ -391,39 +427,27 @@ useEffect(() => {
           </Pressable>
           {groupId ? (
             <Pressable
-              style={{ flex: 1 }}
+              style={styles.groupHeaderButton}
               accessibilityRole="button"
               accessibilityLabel="Open group overview"
               disabled={!groupReady}
               onPress={() => navigation.navigate('GroupOverview', { groupId })}
             >
-              <Text numberOfLines={1} style={styles.title}>{title}</Text>
+              {groupPhotoUri ? (
+                <Image source={{ uri: groupPhotoUri }} style={styles.groupHeaderAvatar} />
+              ) : (
+                <View style={[styles.groupHeaderAvatar, styles.avatarFallback]}>
+                  <Ionicons name="people" size={16} color={colors.white} />
+                </View>
+              )}
+              <Text numberOfLines={1} style={styles.groupTitle}>{title}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.white} />
             </Pressable>
           ) : (
             <Text numberOfLines={1} style={styles.title}>{title}</Text>
           )}
           <View style={styles.side} />
         </View>
-        {kind === 'group' ? (
-          <View style={styles.memberSection}>
-            <Text style={styles.sectionTitle}>Members</Text>
-            {loading ? <ActivityIndicator color={colors.white} /> : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.members}>
-                {memberIds.map((uid) => {
-                  const profile = uid === user?.uid ? null : profiles[uid];
-                  const displayName = uid === user?.uid ? 'You' : profile?.displayName || 'Unavailable member';
-                  const photo = profile?.photoDataUrl || profile?.photoURL;
-                  return (
-                    <View key={uid} style={styles.member}>
-                      {photo ? <Image source={{ uri: photo }} style={styles.memberAvatar} /> : <View style={[styles.memberAvatar, styles.avatarFallback]}><Ionicons name="person" size={20} color={colors.white} /></View>}
-                      <Text numberOfLines={1} style={styles.memberName}>{displayName}</Text>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            )}
-          </View>
-        ) : null}
         {/* LOAD MESSAGES HERE */}
         <View style={{ flex: 1 }}>
           {messagesLoading ? (
@@ -432,68 +456,59 @@ useEffect(() => {
             <Text accessibilityRole="alert" style={{ color: '#FFB4AB', padding: 16 }}>
               {messagesError}
             </Text>
+          ) : timeline.length === 0 ? (
+            <Text style={styles.emptyText}>
+              No messages yet. Start the conversation!
+            </Text>
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-              {messages.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  No messages yet. Start the conversation!
-                </Text>
-              ) : null}
+            <FlatList
+              key={conversationKey}
+              inverted
+              data={timeline}
+              // Offset zero is the newest end of the inverted list.
+              maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 24 }}
+              keyExtractor={(row) => row.key}
+              contentContainerStyle={{ padding: 16, gap: 12 }}
+              renderItem={({ item }) => {
+                const senderId = item.kind === 'event' ? item.event.creatorId : item.message.senderId;
+                const isOwnMessage = senderId === user?.uid;
+                let content: React.ReactNode;
 
-              {groupEvents.map((event) => (
-                <EventChatCard
-                  key={event.id}
-                  title={event.title}
-                  photoURL={event.photoURL}
-                  date={event.startAt.toLocaleDateString()}
-                  time={`${event.startAt.toLocaleTimeString([], {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })} – ${event.endAt.toLocaleTimeString([], {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}`}
-                  location={event.location}
-                  
-                />
-              ))}
-
-              {messages.map((message) => {
-                // Compare identities to decide which side this message belongs on.
-                const isOwnMessage = message.senderId === user?.uid;
-
-                if (message.type === 'poll') {
-                  // Polls only exist in group chats, where their votes are stored.
-                  if (!groupId) return null;
-                  return (
-                    <View key={message.id} style={{ alignSelf: isOwnMessage ? 'flex-end' : 'flex-start' }}>
-                      <PollMessageCard
-                        poll={message}
-                        groupId={groupId}
-                        voterId={user?.uid}
-                        onPress={() => { if (groupReady) setVotingPoll(message); }}
-                      />
-                    </View>
+                // Events and messages choose their content before sharing the sender layout.
+                if (item.kind === 'event') {
+                  const event = item.event;
+                  content = (
+                    <EventChatCard
+                      title={event.title}
+                      photoURL={event.photoURL}
+                      date={event.startAt.toLocaleDateString()}
+                      time={`${event.startAt.toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })} – ${event.endAt.toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}`}
+                      location={event.location}
+                    />
                   );
-                }
+                } else {
+                  const message = item.message;
+                  // Poll votes are only stored for group conversations.
+                  if (message.type === 'poll' && !groupId) return null;
 
-                return (
-                  <View
-                    key={message.id}
-                    style={{
-                      alignSelf: isOwnMessage ? 'flex-end' : 'flex-start',
-                      maxWidth: '80%',
-                    }}
-                  >
+                  content = message.type === 'poll' ? (
+                    <PollMessageCard
+                      poll={message}
+                      groupId={groupId!}
+                      voterId={user?.uid}
+                      onPress={() => { if (groupReady) setVotingPoll(message); }}
+                    />
+                  ) : (
                     <LinearGradient
-                      // Use identical colors for received messages to create a solid fill.
-                      colors={
-                        isOwnMessage
-                          ? gradients.purpleAccent
-                          : [colors.cardDarker, colors.cardDarker]
-                      }
+                      colors={isOwnMessage ? gradients.purpleAccent : [colors.cardDarker, colors.cardDarker]}
                       {...gradientDirection.horizontal}
-                      style={styles.messageBubble}
+                      style={[styles.messageBubble, isOwnMessage && styles.ownMessageBubble]}
                     >
                       {message.imageDataUrl ? (
                         <Pressable accessibilityRole="button" accessibilityLabel="View photo full screen" onPress={() => setFullscreenPhoto(message.imageDataUrl!)}>
@@ -502,10 +517,34 @@ useEffect(() => {
                       ) : null}
                       {message.text ? <Text style={styles.messageText}>{message.text}</Text> : null}
                     </LinearGradient>
+                  );
+                }
+
+                const sender = profiles[senderId];
+                const senderName = sender?.displayName || (isOwnMessage ? 'You' : 'Unknown sender');
+                const senderPhoto = sender?.photoDataUrl || sender?.photoURL;
+                return (
+                  <View style={[styles.messageRow, isOwnMessage && styles.ownMessageRow]}>
+                    {senderPhoto ? (
+                      <Image source={{ uri: senderPhoto }} style={styles.messageAvatar} />
+                    ) : (
+                      <View style={[styles.messageAvatar, styles.avatarFallback]}>
+                        <Ionicons name="person" size={16} color={colors.white} />
+                      </View>
+                    )}
+                    <View style={styles.messageContent}>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.senderName, isOwnMessage && styles.ownSenderName]}
+                      >
+                        {senderName}
+                      </Text>
+                      {content}
+                    </View>
                   </View>
                 );
-              })}
-            </ScrollView>
+              }}
+            />
           )}
         </View>
         {sendError !== null ? (
@@ -611,13 +650,11 @@ const styles = StyleSheet.create({
   header: { height: 58, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center' },
   side: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   title: { ...text.title, flex: 1, color: colors.white, textAlign: 'center' },
-  memberSection: { marginTop: spacing.md, paddingHorizontal: spacing.lg },
-  sectionTitle: { ...text.header, color: colors.white, marginBottom: spacing.sm },
-  members: { gap: spacing.md, paddingVertical: spacing.sm },
-  member: { width: 76, alignItems: 'center', gap: spacing.xs },
-  memberAvatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: colors.cardDarker },
+  groupHeaderButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  groupHeaderAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.cardDarker },
+  // Let long titles truncate within the space between the avatar and chevron.
+  groupTitle: { ...text.title, flexShrink: 1, color: colors.white },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  memberName: { ...text.body, color: colors.white, textAlign: 'center' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingBottom: 48 },
   emptyIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.cardDarker, alignItems: 'center', justifyContent: 'center' },
   emptyText: { ...text.body, color: 'rgba(244,241,247,0.8)', fontSize: 16 },
@@ -655,12 +692,22 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     opacity: 0.4,
   },
+  messageRow: { alignSelf: 'flex-start', flexDirection: 'row', gap: 8, maxWidth: '80%' },
+  ownMessageRow: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
+  messageAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.cardDarker },
+  messageContent: { flexShrink: 1 },
+  senderName: { ...text.body, color: colors.white, fontSize: 12, marginBottom: 4 },
+  ownSenderName: { textAlign: 'right' },
   messageBubble: {
+    // Size the bubble to its content even when the sender label is wider.
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
     // Padding separates the text from the bubble's rounded edges.
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 18,
   },
+  ownMessageBubble: { alignSelf: 'flex-end' },
   messageText: {
     ...text.body,
     color: colors.white,

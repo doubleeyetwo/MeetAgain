@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -310,6 +310,7 @@ function MessageFeedEmptyMessage({ hasError, query }: { hasError: boolean; query
 
 function MessageEntryRow({ entry, onOpen }: { entry: Entry; onOpen: (entry: Entry) => void }) {
   const isGroup = entry.type === 'group';
+  const groupPhotoUri: string | undefined = isGroup ? entry.value.photoDataUrl : undefined;
   const title = isGroup ? entry.value.name : friendDisplayName(entry.value);
   const accessibilityLabel = isGroup ? `Open ${title}` : `Open conversation with ${title}`;
 
@@ -321,9 +322,13 @@ function MessageEntryRow({ entry, onOpen }: { entry: Entry; onOpen: (entry: Entr
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
       {isGroup ? (
-        <View style={[styles.avatar, styles.groupAvatar]}>
-          <Ionicons name="people" size={23} color={colors.white} />
-        </View>
+        groupPhotoUri ? (
+          <Image source={{ uri: groupPhotoUri }} style={styles.avatar} resizeMode="cover" />
+        ) : (
+          <View style={[styles.avatar, styles.groupAvatar]}>
+            <Ionicons name="people" size={23} color={colors.white} />
+          </View>
+        )
       ) : (
         <FriendAvatar friend={entry.value} />
       )}
