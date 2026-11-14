@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -59,6 +59,8 @@ export function PickLocationScreen({
   const [selectedPickId, setSelectedPickId] = useState('');
   const [error, setError] = useState('');
 
+  useEffect(() => { setAddress(route.params.location ?? ''); }, [route.params.location]);
+
   const handleSelectPick = (pick: LocationPick) => {
     setAddress(pick.address);
     setSelectedPickId(pick.id);
@@ -76,6 +78,11 @@ export function PickLocationScreen({
 
     if (!trimmed) {
       setError('Enter an address.');
+      return;
+    }
+
+    if (route.params.editingFromReview && route.params.startAt && route.params.endAt) {
+      navigation.navigate({ name: 'ReviewEvent', params: { ...route.params, location: trimmed, startAt: route.params.startAt, endAt: route.params.endAt, selectedMemberIds: route.params.selectedMemberIds ?? [] }, merge: true, pop: true });
       return;
     }
 

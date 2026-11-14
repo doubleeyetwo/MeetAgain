@@ -1,3 +1,4 @@
+import { eventAlert } from '@/features/events/eventAlert';
 
 import { useEffect, useState } from 'react';
 import {
@@ -17,22 +18,27 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
+import {
+  updateEventRSVP,
+  type RSVPStatus,
+} from '@/features/events/eventRsvpService';
 import { colors, gradients, spacing } from '@/theme';
+import type { AppStackParamList } from '@/navigation/types';
+
 import {
   MeetNowBar,
   placeholderMeetNowFriends,
 } from '../components/MeetNowBar';
+
 import {
   UpcomingEventCard,
   type UpcomingEvent,
 } from '../components/UpcomingEventCard';
-
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { AppStackParamList } from '@/navigation/types';
 
 type SavedEvent = {
   title?: string;
@@ -42,20 +48,26 @@ type SavedEvent = {
   location?: string;
   photoURL?: string | null;
   participantIds?: string[];
+  rsvps?: Record<string, RSVPStatus>;
 };
 
 export function HomeScreen() {
   const { user } = useAuth();
 
-const navigation =
-  useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const navigation =
+    useNavigation<
+      NativeStackNavigationProp<AppStackParamList>
+    >();
 
-  const [upcomingEvents, setUpcomingEvents] = useState<
-    UpcomingEvent[]
-  >([]);
+  const [upcomingEvents, setUpcomingEvents] =
+    useState<UpcomingEvent[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  const [pendingRSVPs, setPendingRSVPs] = useState<
+    string[]
+  >([]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -67,59 +79,83 @@ const navigation =
     setLoading(true);
     setError(false);
 
-    // Find events where the signed-in user is a participant.
     const eventsQuery = query(
       collection(db, 'events'),
-      where('participantIds', 'array-contains', user.uid)
+      where(
+        'participantIds',
+        'array-contains',
+        user.uid
+      )
     );
 
     const unsubscribe = onSnapshot(
       eventsQuery,
-      (snapshot) => {
+      snapshot => {
         const now = Date.now();
 
-        const events: UpcomingEvent[] = snapshot.docs
-          .flatMap((document): UpcomingEvent[] => {
-            const data = document.data() as SavedEvent;
+        const events: UpcomingEvent[] =
+          snapshot.docs
+            .flatMap((document): UpcomingEvent[] => {
+              const data =
+                document.data() as SavedEvent;
 
-            if (!data.startAt || !data.endAt) {
-              return [];
-            }
+              if (!data.startAt || !data.endAt) {
+                return [];
+              }
 
-            const startAt = data.startAt.toDate();
-            const endAt = data.endAt.toDate();
+              const startAt = data.startAt.toDate();
+              const endAt = data.endAt.toDate();
 
-            if (startAt.getTime() <= now) {
-              return [];
-            }
+              if (startAt.getTime() <= now) {
+                return [];
+              }
 
-            return [
-              {
-                id: document.id,
-                title: data.title ?? 'Untitled Event',
-                category: data.category ?? 'Other',
-                startAt,
-                endAt,
-                location: data.location ?? '',
-                eventPhoto: data.photoURL ?? null,
-                attendeeCount: 0,
-              },
-            ];
-          })
-          .sort(
-            (a, b) =>
-              a.startAt.getTime() - b.startAt.getTime()
-  );
+              // Declined events remain in Firebase
+              // but disappear from this user's Home.
+              if (data.rsvps?.[user.uid] === 'no') {
+                return [];
+              }
+
+              const confirmedCount =
+                (data.participantIds ?? []).filter(
+                  id => data.rsvps?.[id] === 'yes'
+                ).length;
+
+              return [
+                {
+                  id: document.id,
+                  title:
+                    data.title ?? 'Untitled Event',
+                  category:
+                    data.category ?? 'Other',
+                  startAt,
+                  endAt,
+                  location:
+                    data.location ?? '',
+                  eventPhoto:
+                    data.photoURL ?? null,
+                  attendeeCount: confirmedCount,
+                  rsvpStatus:
+                    data.rsvps?.[user.uid] ?? null,
+                },
+              ];
+            })
+            .sort(
+              (a, b) =>
+                a.startAt.getTime() -
+                b.startAt.getTime()
+            );
 
         setUpcomingEvents(events);
         setLoading(false);
         setError(false);
       },
-      (snapshotError) => {
+      snapshotError => {
         console.error(
           'Could not load upcoming events:',
           snapshotError
         );
+
         setUpcomingEvents([]);
         setLoading(false);
         setError(true);
@@ -128,6 +164,41 @@ const navigation =
 
     return unsubscribe;
   }, [user?.uid]);
+
+  const handleRSVP = async (
+    event: UpcomingEvent,
+    status: RSVPStatus
+  ) => {
+    if (!user?.uid) return;
+
+    if (pendingRSVPs.includes(event.id)) {
+      return;
+    }
+
+    setPendingRSVPs(previous => [
+      ...previous,
+      event.id,
+    ]);
+
+    try {
+      await updateEventRSVP(
+        event.id,
+        user.uid,
+        status
+      );
+    } catch (error) {
+      console.error('RSVP failed:', error);
+
+      eventAlert(
+        'Unable to Update RSVP',
+        'Your response could not be saved. Please try again.'
+      );
+    } finally {
+      setPendingRSVPs(previous =>
+        previous.filter(id => id !== event.id)
+      );
+    }
+  };
 
   return (
     <LinearGradient
@@ -143,8 +214,10 @@ const navigation =
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {/* MEETNOW - friends are placeholders until #34 is wired up. */}
-          <MeetNowBar friends={placeholderMeetNowFriends} />
+          {/* MEETNOW - teammate feature */}
+          <MeetNowBar
+            friends={placeholderMeetNowFriends}
+          />
 
           {/* UPCOMING EVENTS */}
           <View style={styles.upcomingSection}>
@@ -191,15 +264,33 @@ const navigation =
                 </Text>
               </View>
             ) : (
-              upcomingEvents.map((event) => (
+              upcomingEvents.map(event => (
                 <UpcomingEventCard
                   key={event.id}
                   event={event}
-                onPress={(selectedEvent) => {
-                  navigation.navigate('EventDetails', {
-                    eventId: selectedEvent.id,
-                  });
-                }}
+                  rsvpBusy={pendingRSVPs.includes(
+                    event.id
+                  )}
+                  onPress={selectedEvent => {
+                    navigation.navigate(
+                      'EventDetails',
+                      {
+                        eventId: selectedEvent.id,
+                      }
+                    );
+                  }}
+                  onRSVP={selectedEvent =>
+                    handleRSVP(
+                      selectedEvent,
+                      'yes'
+                    )
+                  }
+                  onDecline={selectedEvent =>
+                    handleRSVP(
+                      selectedEvent,
+                      'no'
+                    )
+                  }
                 />
               ))
             )}
@@ -214,19 +305,15 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-
   scrollView: {
     flex: 1,
   },
-
   content: {
     paddingBottom: spacing.xxl,
   },
-
   upcomingSection: {
     paddingHorizontal: spacing.md,
   },
-
   sectionTitle: {
     color: colors.white,
     fontSize: 20,
@@ -234,7 +321,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.md,
   },
-
   centerState: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -242,14 +328,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
   },
-
   stateTitle: {
     color: colors.white,
     fontSize: 18,
     fontWeight: '700',
     marginTop: spacing.sm,
   },
-
   stateDescription: {
     color: colors.linkAccent,
     fontSize: 13,

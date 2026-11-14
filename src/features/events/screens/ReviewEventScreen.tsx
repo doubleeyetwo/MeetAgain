@@ -1,7 +1,8 @@
+import { MAX_PLANNING_ENTRIES, validItemPrice, validatePlanning } from '@/features/events/eventPlanning';
+import { eventAlert } from '@/features/events/eventAlert';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -106,6 +107,12 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
   const [photoLoading, setPhotoLoading] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
+  const submissionRef = useRef(false);
+  const createdRef = useRef(false);
+  useEffect(() => {
+    setEventPhoto(initialEventPhoto ?? null);
+    setEventPhotoDataUrl(initialEventPhoto?.startsWith('data:image/') ? initialEventPhoto : null);
+  }, [initialEventPhoto]);
 
   const [description, setDescription] = useState('');
   const [reminder, setReminder] = useState('24 hours before');
@@ -289,7 +296,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
         : await pickPhotoFromLibrary();
 
     if (result.error) {
-      Alert.alert('Photo Error', result.error);
+      eventAlert('Photo Error', result.error);
       return;
     }
 
@@ -298,7 +305,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
       setEventPhotoDataUrl(result.photo.dataUrl);
     }
   } catch {
-    Alert.alert(
+    eventAlert(
       'Photo Error',
       'Unable to select your event photo. Please try again.'
     );
@@ -316,7 +323,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
       return;
     }
 
-    Alert.alert(
+    eventAlert(
       'Event Photo',
       'Choose an event cover photo',
       [
@@ -372,6 +379,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     pressedEntry?.type === type && pressedEntry.id === id;
 
   const openAddModal = (type: AddType) => {
+    if ((type === 'item' ? items : tasks).length >= MAX_PLANNING_ENTRIES) { eventAlert('Planning Limit', 'Events support up to 20 items and 20 tasks.'); return; }
     setNewName('');
     setNewPrice('');
     setModalType(type);
@@ -384,10 +392,11 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   };
 
   const handleAdd = () => {
+    if ((modalType === 'item' ? items : tasks).length >= MAX_PLANNING_ENTRIES) { eventAlert('Planning Limit', 'Events support up to 20 items and 20 tasks.'); return; }
     const trimmedName = newName.trim();
 
     if (!trimmedName) {
-      Alert.alert(
+      eventAlert(
         'Missing Name',
         `Please enter a ${
           modalType === 'item' ? 'name for the item' : 'task name'
@@ -401,12 +410,11 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
       if (
         !newPrice.trim() ||
-        !Number.isFinite(price) ||
-        price < 0
+        !validItemPrice(price)
       ) {
-        Alert.alert(
+        eventAlert(
           'Invalid Price',
-          'Enter a valid price of $0 or more.'
+          'Enter a price between $0 and $1,000,000.'
         );
         return;
       }
@@ -463,12 +471,11 @@ export function ReviewEventScreen({ navigation, route }: Props) {
 
     if (
       !editedPrice.trim() ||
-      !Number.isFinite(price) ||
-      price < 0
+      !validItemPrice(price)
     ) {
-      Alert.alert(
+      eventAlert(
         'Invalid Price',
-        'Enter a valid price of $0 or more.'
+        'Enter a price between $0 and $1,000,000.'
       );
       return;
     }
@@ -501,7 +508,7 @@ export function ReviewEventScreen({ navigation, route }: Props) {
       (previousId === null && assigneeId === user.uid) ||
       (previousId === user.uid && assigneeId === null);
     if (!canAssignOthers && !selfChange) {
-      Alert.alert('Not Allowed', 'Only an administrator can change another member’s assignment.');
+      eventAlert('Not Allowed', 'Only an administrator can change another member’s assignment.');
       return;
     }
     if (assigneeId !== null && !attendeeIds.includes(assigneeId)) return;
@@ -576,22 +583,24 @@ export function ReviewEventScreen({ navigation, route }: Props) {
     savingEvent,
   });
 
-  if (!user || savingEvent) return;
+  if (!user || submissionRef.current || createdRef.current) return;
+  try { validatePlanning(items, tasks); } catch (error) { eventAlert('Invalid Planning', (error as Error).message); return; }
 
   const normalizedTitle = eventName.trim() || 'Untitled Event';
   const startTime = new Date(startAt).getTime();
   const endTime = new Date(endAt).getTime();
   if (normalizedTitle.length > 150) {
-    Alert.alert('Event Title Too Long', 'Event titles must be 150 characters or fewer.');
+    eventAlert('Event Title Too Long', 'Event titles must be 150 characters or fewer.');
     return;
   }
   if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) {
-    Alert.alert('Invalid Event Time', 'Choose an end time after the start time.');
+    eventAlert('Invalid Event Time', 'Choose an end time after the start time.');
     return;
   }
 
   let saveStage = 'event group';
   try {
+submissionRef.current = true;
 setSavingEvent(true);
 
 const participantIds = [...new Set([
@@ -652,6 +661,9 @@ const eventId = await createEvent({
   }[reminder] ?? null,
 });
 
+createdRef.current = true;
+navigation.reset({ index: 0, routes: [{ name: 'EventTemplates' }] });
+
 if (directConversationId) {
   navigation.getParent()?.navigate('Messages', {
     screen: 'Conversation',
@@ -675,20 +687,21 @@ if (directConversationId) {
     },
   });
 } else {
-  Alert.alert('Event Created', 'Your event was saved!');
+  eventAlert('Event Created', 'Your event was saved!');
   navigation.getParent()?.navigate('Home');
 }
 
 } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`Failed to save ${saveStage}:`, error);
-    Alert.alert(
+    eventAlert(
       'Could Not Save Event',
       saveStage === 'event group'
         ? `The event group could not be created. Check that everyone is still an accepted friend, then try again. (${detail})`
         : `The event could not be saved. Please try again. (${detail})`
     );
   } finally {
+    submissionRef.current = false;
     setSavingEvent(false);
   }
 };
@@ -735,9 +748,9 @@ if (directConversationId) {
     {/* CATEGORY */}
     <Pressable
       onPress={() =>
-        navigation.navigate('EventDetails', {
+        navigation.push('EventDetails', {
           ...route.params,
-          eventPhoto,
+          eventPhoto: eventPhotoDataUrl ?? eventPhoto,
           editingFromReview: true,
         })
       }
@@ -750,9 +763,9 @@ if (directConversationId) {
     {/* DATE */}
     <Pressable
       onPress={() =>
-        navigation.navigate('PickTime', {
+        navigation.push('PickTime', {
           ...route.params,
-          eventPhoto,
+          eventPhoto: eventPhotoDataUrl ?? eventPhoto,
           editingFromReview: true,
         })
       }
@@ -770,9 +783,9 @@ if (directConversationId) {
     <Pressable
       style={styles.infoRow}
       onPress={() =>
-        navigation.navigate('PickLocation', {
+        navigation.push('PickLocation', {
           ...route.params,
-          eventPhoto,
+          eventPhoto: eventPhotoDataUrl ?? eventPhoto,
           editingFromReview: true,
         })
       }
@@ -791,9 +804,9 @@ if (directConversationId) {
     <Pressable
       style={styles.infoRow}
       onPress={() =>
-        navigation.navigate('PickTime', {
+        navigation.push('PickTime', {
           ...route.params,
-          eventPhoto,
+          eventPhoto: eventPhotoDataUrl ?? eventPhoto,
           editingFromReview: true,
         })
       }

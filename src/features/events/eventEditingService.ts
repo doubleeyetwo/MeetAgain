@@ -1,3 +1,4 @@
+import { validatePlanning } from './eventPlanning';
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import type { EventItem, EventTask } from '@/types/models';
@@ -43,7 +44,7 @@ function selfAssignmentOnly<T extends {id: number; assigneeId: string | null}>(b
 
 export async function saveEventPlanningDraft(eventId: string, actorId: string, draft: PlanningDraft): Promise<void> {
   if (!eventId || !actorId) throw new Error('Missing event or account.');
-  if (draft.items.length > 20 || draft.tasks.length > 20) throw new Error('Events support up to 20 items and 20 tasks.');
+  validatePlanning(draft.items, draft.tasks);
   const ref = doc(db, 'events', eventId);
   await runTransaction(db, async tx => {
     const snap = await tx.get(ref);

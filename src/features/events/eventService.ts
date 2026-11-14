@@ -1,3 +1,4 @@
+import { validatePlanning } from './eventPlanning';
 
 import {
   collection,
@@ -28,6 +29,7 @@ type CreateEventInput = {
 };
 
 export async function createEvent(input: CreateEventInput) {
+  validatePlanning(input.items, input.tasks);
   const eventRef = doc(collection(db, 'events'));
 
   await setDoc(eventRef, {

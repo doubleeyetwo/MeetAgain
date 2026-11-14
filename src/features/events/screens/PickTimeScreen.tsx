@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -46,9 +46,18 @@ export function PickTimeScreen({
 
   // The one copy of the event's time. When the heat map is added, its drag
   // should call setTimes too; the dropdowns then show whatever it picked.
-  const [times, setTimes] = useState<EventTimes>(() =>
-    createDefaultTimes(range)
-  );
+  const [times, setTimes] = useState<EventTimes>(() => {
+    const start = new Date(route.params.startAt ?? '');
+    const end = new Date(route.params.endAt ?? '');
+    return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())
+      ? { start, end } : createDefaultTimes(range);
+  });
+
+  useEffect(() => {
+    const start = new Date(route.params.startAt ?? '');
+    const end = new Date(route.params.endAt ?? '');
+    if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())) setTimes({ start, end });
+  }, [route.params.startAt, route.params.endAt]);
 
   const dateOptions = useMemo(
     () => getDateOptions(range),
@@ -59,6 +68,11 @@ export function PickTimeScreen({
 
   const handleConfirmTime = () => {
   if (error) {
+    return;
+  }
+
+  if (route.params.editingFromReview) {
+    navigation.navigate({ name: 'ReviewEvent', params: { ...route.params, startAt: times.start.toISOString(), endAt: times.end.toISOString(), selectedMemberIds: route.params.selectedMemberIds ?? [] }, merge: true, pop: true });
     return;
   }
 
