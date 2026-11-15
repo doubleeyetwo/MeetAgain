@@ -24,6 +24,7 @@ export type EventCreationStackParamList = {
         selectedMemberIds?: string[];
         matchingGroupId?: string;
         editingFromReview?: boolean;
+        matchingGroupId?: string;
       }
     | undefined;
 
@@ -38,6 +39,7 @@ export type EventCreationStackParamList = {
     selectedMemberIds: string[];
     matchingGroupId?: string;
     editingFromReview?: boolean;
+    matchingGroupId?: string;
   };
 
   PickTime: {
@@ -51,6 +53,7 @@ export type EventCreationStackParamList = {
     selectedMemberIds: string[];
     matchingGroupId?: string;
     editingFromReview?: boolean;
+    matchingGroupId?: string;
   };
 
   SelectMembers: {

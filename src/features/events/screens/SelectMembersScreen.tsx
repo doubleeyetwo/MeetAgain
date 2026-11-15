@@ -1,8 +1,8 @@
+import { eventAlert } from '@/features/events/eventAlert';
 
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -183,7 +183,7 @@ export function SelectMembersScreen({
       members.length === 0 ||
       members.length > MAX_SELECTED
     ) {
-      Alert.alert(
+      eventAlert(
         'Cannot Select Group',
         'This group cannot be selected for the event.'
       );
@@ -241,7 +241,7 @@ export function SelectMembersScreen({
     }
 
     if (selected.length === 0) {
-      Alert.alert(
+      eventAlert(
         'Select People',
         'Choose at least one person or group.'
       );
@@ -261,7 +261,7 @@ export function SelectMembersScreen({
 
     // Only a new group requires every selected person to remain an accepted friend.
     if (!matchingGroup && selected.some((uid) => !friendIds.has(uid))) {
-      Alert.alert(
+      eventAlert(
         'Cannot Create Group',
         'Everyone in a new event group must be an accepted friend.'
       );

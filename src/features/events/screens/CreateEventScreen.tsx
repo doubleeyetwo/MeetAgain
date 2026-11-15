@@ -1,7 +1,7 @@
+import { eventAlert } from '@/features/events/eventAlert';
 
 import { useState } from 'react';
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -91,7 +91,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
           : await pickPhotoFromLibrary();
 
       if (result.error) {
-        Alert.alert('Photo Error', result.error);
+        eventAlert('Photo Error', result.error);
         return;
       }
 
@@ -99,7 +99,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
         setEventPhoto(result.photo.dataUrl);
       }
     } catch {
-      Alert.alert(
+      eventAlert(
         'Photo Error',
         'Unable to select your event photo. Please try again.'
       );
@@ -116,7 +116,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
       return;
     }
 
-    Alert.alert(
+    eventAlert(
       'Event Photo',
       'Choose an event cover photo',
       [
@@ -157,7 +157,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
       !route.params.startAt ||
       !route.params.endAt
     ) {
-      Alert.alert('Error', 'Event date and time are missing.');
+      eventAlert('Error', 'Event date and time are missing.');
       return;
     }
 

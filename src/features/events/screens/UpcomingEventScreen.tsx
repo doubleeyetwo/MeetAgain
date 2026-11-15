@@ -1,8 +1,9 @@
+import { MAX_PLANNING_ENTRIES, validItemPrice, validItems, validTasks } from '@/features/events/eventPlanning';
+import { eventAlert } from '@/features/events/eventAlert';
 
 import { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -37,6 +38,7 @@ type SavedEvent = {
   endAt: Timestamp;
   photoURL?: string | null;
   participantIds?: string[];
+  rsvps?: Record<string, 'yes' | 'no'>;
   creatorId?: string;
   groupId?: string | null;
   reminderMinutesBefore?: number | null;
@@ -77,6 +79,7 @@ export function UpcomingEventScreen({ navigation, route }: Props) {
   const [conflict, setConflict] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [invalidPlanning, setInvalidPlanning] = useState(false);
   const [attendeeNames, setAttendeeNames] = useState<Record<string, string>>({});
   const [groupAdminIds, setGroupAdminIds] = useState<string[]>([]);
   const [assignmentEntry, setAssignmentEntry] = useState<{type: 'item' | 'task'; id: number} | null>(null);
@@ -97,7 +100,7 @@ const [editedPrice, setEditedPrice] = useState('');
 
 const isPast = !!event && event.endAt.toDate().getTime() <= Date.now();
 const isAdmin = !!user && (event?.groupId ? groupAdminIds.includes(user.uid) : event?.creatorId === user.uid);
-const canEdit = !!user && !isPast && (event?.participantIds ?? []).includes(user.uid);
+const canEdit = !!user && !invalidPlanning && !isPast && (event?.participantIds ?? []).includes(user.uid);
 const canManage = canEdit && isAdmin;
 const markChanged = () => { dirtyRef.current = true; setDirty(true); setSaveDiagnostic(null); };
 const updateDraft = (type: 'item' | 'task', update: (entries: any[]) => any[]) => {
@@ -115,11 +118,12 @@ const closeAddModal = () => {
 
 const handleAddEntry = () => {
   if (!canManage || !addType || saving) return;
+  if ((addType === 'item' ? draftItems : draftTasks).length >= MAX_PLANNING_ENTRIES) { eventAlert('Planning Limit', 'Events support up to 20 items and 20 tasks.'); return; }
   const name = newName.trim();
-  if (!name) { Alert.alert('Missing Name', 'Please enter a name.'); return; }
+  if (!name) { eventAlert('Missing Name', 'Please enter a name.'); return; }
   const price = Number(newPrice.trim());
-  if (addType === 'item' && (!newPrice.trim() || !Number.isFinite(price) || price < 0)) {
-    Alert.alert('Invalid Price', 'Enter a valid price of $0 or more.'); return;
+  if (addType === 'item' && (!newPrice.trim() || !validItemPrice(price))) {
+    eventAlert('Invalid Price', 'Enter a price between $0 and $1,000,000.'); return;
   }
   const id = Date.now() * 1000 + Math.floor(Math.random() * 1000);
   if (addType === 'item') updateDraft('item', entries => [...entries, {id, name, price, completed: false, assigneeId: null}]);
@@ -145,8 +149,8 @@ const closePriceEditor = () => {
 const saveEditedPrice = () => {
   if (!canManage || editingPriceId === null || saving) return;
   const price = Number(editedPrice.trim());
-  if (!editedPrice.trim() || !Number.isFinite(price) || price < 0) {
-    Alert.alert('Invalid Price', 'Enter a valid price of $0 or more.'); return;
+  if (!editedPrice.trim() || !validItemPrice(price)) {
+    eventAlert('Invalid Price', 'Enter a price between $0 and $1,000,000.'); return;
   }
   updateDraft('item', entries => entries.map(entry => entry.id === editingPriceId ? {...entry, price} : entry));
   closePriceEditor();
@@ -154,7 +158,7 @@ const saveEditedPrice = () => {
 
 const handleSave = async () => {
   if (!user || !canEdit || !dirty || saving) return;
-  if (conflict) { Alert.alert('Event Updated', 'Someone else changed this event. Go back and reopen it before editing.'); return; }
+  if (conflict) { eventAlert('Event Updated', 'Someone else changed this event. Go back and reopen it before editing.'); return; }
   setSaveDiagnostic(null);
   setSaving(true);
   try {
@@ -174,7 +178,7 @@ const handleSave = async () => {
     const code = typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : 'unknown';
     console.error('[UpcomingEvent] Save failed:', {code, detail, error: err});
     setSaveDiagnostic(`Save failed (${code}): ${detail}`);
-    Alert.alert('Unable to Save', detail);
+    eventAlert('Unable to Save', detail);
   } finally { setSaving(false); }
 };
 
@@ -183,6 +187,13 @@ const handleSave = async () => {
       doc(db, 'events', eventId),
       (snapshot) => {
         const latest = snapshot.exists() ? (snapshot.data() as SavedEvent) : null;
+        const planningOK = validItems(latest?.items ?? []) && validTasks(latest?.tasks ?? []);
+        setInvalidPlanning(!planningOK);
+        // Never save a filtered list back over malformed stored data.
+        if (latest && !planningOK) {
+          latest.items = validItems(latest.items ?? []) ? latest.items : [];
+          latest.tasks = validTasks(latest.tasks ?? []) ? latest.tasks : [];
+        }
         setEvent(latest);
         if (!dirtyRef.current) {
           setDraftItems(latest?.items ?? []);
@@ -314,6 +325,7 @@ const handleSave = async () => {
         </Pressable>
       </View>
 
+      {invalidPlanning && <View style={styles.saveDiagnosticBox}><Text style={styles.saveDiagnosticText}>Some planning data is invalid and cannot be displayed. Editing is disabled to preserve the saved event.</Text></View>}
       {saveDiagnostic ? (
         <View style={styles.saveDiagnosticBox}>
           <Text style={styles.saveDiagnosticText} selectable>{saveDiagnostic}</Text>
@@ -424,7 +436,9 @@ const handleSave = async () => {
             style={styles.attendeeRow}
             contentContainerStyle={styles.attendeeContent}
           >
-            {(event.participantIds ?? []).map((id) => {
+            {(event.participantIds ?? [])
+              .filter(id => event.rsvps?.[id] === 'yes')
+              .map((id) => {
               const photo = attendeePhotos[id];
 
               return (
