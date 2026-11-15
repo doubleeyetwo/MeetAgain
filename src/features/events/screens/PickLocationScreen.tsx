@@ -79,10 +79,13 @@ export function PickLocationScreen({
       return;
     }
 
-    navigation.navigate('PickTime', {
-      ...route.params,
-      location: trimmed,
-    });
+    const { editingFromReview, ...details } = route.params;
+    const params = { ...details, location: trimmed };
+    if (editingFromReview) {
+      navigation.navigate({ name: 'ReviewEvent', params, merge: true, pop: true });
+      return;
+    }
+    navigation.navigate('ReviewEvent', params);
   };
 
 

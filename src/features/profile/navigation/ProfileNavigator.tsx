@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '@/features/profile/screens/ProfileScreen';
 import { EditProfileScreen } from '@/features/profile/screens/EditProfileScreen';
 import { SettingsScreen } from '@/features/profile/screens/SettingsScreen';
+import { PrivacySettingsScreen } from '@/features/profile/screens/PrivacySettingsScreen';
 import { ChangePasswordScreen } from '@/features/profile/screens/ChangePasswordScreen';
 import { OtherProfileScreen } from '@/features/profile/screens/OtherProfileScreen';
 import { FriendsScreen } from '@/features/friends/screens/FriendsScreen';
@@ -21,6 +22,7 @@ export function ProfileNavigator() {
       <Stack.Screen name="Friends" component={FriendsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="OtherProfile" component={OtherProfileScreen} />
     </Stack.Navigator>

@@ -18,11 +18,11 @@ export const colors = {
   red: '#ff3131', // Bright Neon red for deletions, exits, logouts, etc
   online: '#4ce417', // Neon green dot on an available MeetNow avatar.
 
-  // Lighter green indicates more available time.
+  // Event planning heatmap. Green requires a continuous 30-minute shared opening.
   freeDay: {
-    high: '#3cbe66',
-    medium: '#2e8e56',
-    low: '#1d5941',
+    high: '#3CBE66', // At least 85% of the planning window is free together.
+    medium: '#247349', // At least 60% and under 85% is free together.
+    low: '#153D2D', // Under 60% is free together.
   },
 } as const;
 

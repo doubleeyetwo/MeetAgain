@@ -652,8 +652,11 @@ const eventId = await createEvent({
   }[reminder] ?? null,
 });
 
+const tabs = navigation.getParent();
+navigation.popToTop();
+
 if (directConversationId) {
-  navigation.getParent()?.navigate('Messages', {
+  tabs?.navigate('Messages', {
     screen: 'Conversation',
     initial: false,
     params: {
@@ -664,7 +667,7 @@ if (directConversationId) {
     },
   });
 } else if (groupId) {
-  navigation.getParent()?.navigate('Messages', {
+  tabs?.navigate('Messages', {
     screen: 'Conversation',
     initial: false,
     params: {
@@ -676,7 +679,7 @@ if (directConversationId) {
   });
 } else {
   Alert.alert('Event Created', 'Your event was saved!');
-  navigation.getParent()?.navigate('Home');
+  tabs?.navigate('Home');
 }
 
 } catch (error) {
@@ -1043,7 +1046,11 @@ if (directConversationId) {
 
         <Pressable
           style={styles.deleteButton}
-          onPress={() => navigation.getParent()?.navigate('Home')}
+          onPress={() => {
+            const tabs = navigation.getParent();
+            navigation.popToTop();
+            tabs?.navigate('Home');
+          }}
         >
           <Ionicons
             name="trash-outline"

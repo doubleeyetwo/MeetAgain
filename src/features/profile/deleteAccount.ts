@@ -1,6 +1,7 @@
 import { deleteUser, getIdTokenResult, User } from 'firebase/auth';
-import { collection, deleteDoc, doc, getDocFromServer, getDocsFromServer, query, runTransaction, Transaction, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocFromServer, getDocsFromServer, query, runTransaction, Transaction, where, writeBatch } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
+import { disconnectGoogleCalendar } from '@/features/calendar/googleCalendar';
 
 const RECENT_SIGN_IN_MS = 4 * 60 * 1000;
 const SIGN_IN_AGAIN = 'For security, log out and sign in again, then retry deleting your account.';
@@ -63,7 +64,7 @@ export async function deleteAccount(user: User): Promise<void> {
   // Firebase Auth requires a recent sign-in for deletion. Check before any data is removed.
   await requireRecentSignIn(user);
   const uid = user.uid;
-  await deleteDoc(doc(db, 'calendarImports', uid));
+  await disconnectGoogleCalendar(uid);
   const userRef = doc(db, 'users', uid);
   const profile = await getDocFromServer(userRef);
   // The Firestore batch may have succeeded even if Auth deletion failed.

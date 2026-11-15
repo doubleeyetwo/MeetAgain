@@ -16,6 +16,7 @@ export type ProfileStackParamList = {
   Friends: undefined;
   EditProfile: undefined;
   Settings: undefined;
+  PrivacySettings: undefined;
   ChangePassword: undefined;
   OtherProfile: { uid: string }
 };
