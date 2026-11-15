@@ -1077,6 +1077,7 @@ if (directConversationId) {
       {/* CONFIRM EVENT */}
 
       <Pressable
+        style={styles.confirmButton}
         onPress={handleConfirmEvent}
         disabled={savingEvent}
       >
@@ -1766,6 +1767,7 @@ const styles = StyleSheet.create({
 
   confirmButton: {
     height: 72,
+    marginBottom: 28,
     borderRadius: 25,
     overflow: 'hidden',
   },
