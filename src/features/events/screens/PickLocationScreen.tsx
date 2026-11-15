@@ -1,6 +1,7 @@
 
 import { useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -26,12 +27,25 @@ import {
   gradientDirection,
 } from '@/theme';
 
-import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import { auth } from '@/config/firebase';
+import { saveEventDetails } from '@/features/events/eventEditingService';
 
-type Props = NativeStackScreenProps<
+import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import type { AppStackParamList } from '@/navigation/types';
+
+type CreationProps = NativeStackScreenProps<
   EventCreationStackParamList,
   'PickLocation'
 >;
+
+type EditingProps = NativeStackScreenProps<
+  AppStackParamList,
+  'EditEventLocation'
+>;
+
+type ScreenProps =
+  | { mode: 'create'; screen: CreationProps }
+  | { mode: 'edit'; screen: EditingProps };
 
 type LocationPick = {
   id: string;
@@ -59,17 +73,29 @@ const MEETAGAIN_PICKS: LocationPick[] = [
   },
 ];
 
-export function PickLocationScreen({
-  navigation,
-  route,
-}: Props) {
+export function PickLocationScreen(props: CreationProps) {
+  return <LocationForm mode="create" screen={props} />;
+}
+
+export function EditEventLocationScreen(props: EditingProps) {
+  return <LocationForm mode="edit" screen={props} />;
+}
+
+function LocationForm(props: ScreenProps) {
+  const params = props.screen.route.params;
+  const isEditing = props.mode === 'edit';
+
   const [address, setAddress] = useState(
-    route.params.location ?? ''
+    params.location ?? ''
   );
+
   const [selectedPickId, setSelectedPickId] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const handleSelectPick = (pick: LocationPick) => {
+    if (saving) return;
+
     setAddress(pick.address);
     setSelectedPickId(pick.id);
     setError('');
@@ -78,16 +104,56 @@ export function PickLocationScreen({
   const handleChangeAddress = (value: string) => {
     setAddress(value);
     setSelectedPickId('');
+
     if (error) setError('');
   };
 
-  const handleConfirmLocation = () => {
+  const handleConfirmLocation = async () => {
     const trimmed = address.trim();
 
     if (!trimmed) {
       setError('Enter an address.');
       return;
     }
+
+    if (props.mode === 'edit') {
+      if (saving) return;
+
+      const actorId = auth.currentUser?.uid;
+
+      if (!actorId) {
+        Alert.alert(
+          'Sign In Required',
+          'Please sign in before editing this event.'
+        );
+        return;
+      }
+
+      setSaving(true);
+
+      try {
+        await saveEventDetails(
+          props.screen.route.params.editingEventId,
+          actorId,
+          { location: trimmed }
+        );
+
+        props.screen.navigation.goBack();
+      } catch (error) {
+        Alert.alert(
+          'Unable to Save',
+          error instanceof Error
+            ? error.message
+            : 'Please try again.'
+        );
+      } finally {
+        setSaving(false);
+      }
+
+      return;
+    }
+
+    const { navigation, route } = props.screen;
 
     navigation.navigate('PickTime', {
       ...route.params,
@@ -103,11 +169,17 @@ export function PickLocationScreen({
     >
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={
+          Platform.OS === 'ios' ? 'padding' : undefined
+        }
       >
         <ScreenHeader
-          title="Choose Location"
-          onBack={() => navigation.goBack()}
+          title={
+            isEditing
+              ? 'Edit Event Location'
+              : 'Choose Location'
+          }
+          onBack={() => props.screen.navigation.goBack()}
         />
 
         <View style={styles.content}>
@@ -123,6 +195,7 @@ export function PickLocationScreen({
             {MEETAGAIN_PICKS.map((pick) => (
               <Pressable
                 key={pick.id}
+                disabled={saving}
                 onPress={() => handleSelectPick(pick)}
                 style={({ pressed }) => [
                   styles.pickCard,
@@ -190,17 +263,30 @@ export function PickLocationScreen({
                 style={styles.searchInput}
                 autoCapitalize="words"
                 returnKeyType="done"
-                onSubmitEditing={handleConfirmLocation}
+                editable={!saving}
+                onSubmitEditing={() =>
+                  void handleConfirmLocation()
+                }
               />
             </View>
 
             {error ? (
-              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.errorText}>
+                {error}
+              </Text>
             ) : null}
 
             <ContinueButton
-              title="Confirm Location"
-              onPress={handleConfirmLocation}
+              title={
+                saving
+                  ? 'Saving...'
+                  : isEditing
+                    ? 'Save Changes'
+                    : 'Confirm Location'
+              }
+              onPress={() =>
+                void handleConfirmLocation()
+              }
             />
           </View>
         </View>

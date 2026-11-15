@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import {
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,7 +9,7 @@ import {
   Text,
   TextInput,
   View,
-  ScrollView
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -31,14 +30,26 @@ import {
   gradientDirection,
 } from '@/theme';
 import { EditPhoto } from '@/components/EditPhoto';
-
 import { getTemplate } from '@/features/events/eventTemplates';
-import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import { saveEventDetails } from '@/features/events/eventEditingService';
+import { auth } from '@/config/firebase';
 
-type Props = NativeStackScreenProps<
+import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import type { AppStackParamList } from '@/navigation/types';
+
+type CreationProps = NativeStackScreenProps<
   EventCreationStackParamList,
   'EventDetails'
 >;
+
+type EditingProps = NativeStackScreenProps<
+  AppStackParamList,
+  'EditEventDetails'
+>;
+
+type ScreenProps =
+  | { mode: 'create'; screen: CreationProps }
+  | { mode: 'edit'; screen: EditingProps };
 
 const EVENT_CATEGORIES = [
   'Food & Dining',
@@ -49,13 +60,24 @@ const EVENT_CATEGORIES = [
   'Other',
 ];
 
-export function CreateEventScreen({ navigation, route }: Props) {
+export function CreateEventScreen(props: CreationProps) {
+  return <EventDetailsForm mode="create" screen={props} />;
+}
+
+export function EditEventDetailsScreen(props: EditingProps) {
+  return <EventDetailsForm mode="edit" screen={props} />;
+}
+
+function EventDetailsForm(props: ScreenProps) {
+  const isEditing = props.mode === 'edit';
+  const params = props.screen.route.params;
+
   const [eventName, setEventName] = useState(
-    route.params?.eventName ?? ''
+    params?.eventName ?? ''
   );
 
   const [category, setCategory] = useState(() => {
-    const initialCategory = route.params?.category ?? '';
+    const initialCategory = params?.category ?? '';
 
     if (
       initialCategory &&
@@ -68,19 +90,20 @@ export function CreateEventScreen({ navigation, route }: Props) {
   });
 
   const [customCategory, setCustomCategory] = useState(
-    route.params?.category &&
-      !EVENT_CATEGORIES.includes(route.params.category)
-      ? route.params.category
+    params?.category &&
+      !EVENT_CATEGORIES.includes(params.category)
+      ? params.category
       : ''
   );
 
   const [showCategories, setShowCategories] = useState(false);
 
   const [eventPhoto, setEventPhoto] = useState<string | null>(
-    route.params?.eventPhoto ?? null
+    params?.eventPhoto ?? null
   );
 
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const resolvedCategory =
     category === 'Other'
@@ -154,9 +177,66 @@ export function CreateEventScreen({ navigation, route }: Props) {
     );
   };
 
-  const handleConfirmDetails = () => {
+  const handleConfirmDetails = async () => {
+    const trimmedName = eventName.trim();
+
+    if (!trimmedName) {
+      Alert.alert('Missing Details', 'Enter an event name.');
+      return;
+    }
+
+    if (!resolvedCategory) {
+      Alert.alert(
+        'Missing Details',
+        'Select or enter an event category.'
+      );
+      return;
+    }
+
+    if (props.mode === 'edit') {
+      const actorId = auth.currentUser?.uid;
+
+      if (!actorId) {
+        Alert.alert(
+          'Sign In Required',
+          'Please sign in before editing this event.'
+        );
+        return;
+      }
+
+      if (saving) return;
+
+      setSaving(true);
+
+      try {
+        await saveEventDetails(
+          props.screen.route.params.editingEventId,
+          actorId,
+          {
+            title: trimmedName,
+            category: resolvedCategory,
+          }
+        );
+
+        props.screen.navigation.goBack();
+      } catch (error) {
+        Alert.alert(
+          'Unable to Save',
+          error instanceof Error
+            ? error.message
+            : 'Please try again.'
+        );
+      } finally {
+        setSaving(false);
+      }
+
+      return;
+    }
+
+    const { navigation, route } = props.screen;
+
     const updatedDetails = {
-      eventName: eventName.trim(),
+      eventName: trimmedName,
       category: resolvedCategory,
       presetId: route.params?.presetId,
       eventPhoto,
@@ -167,7 +247,10 @@ export function CreateEventScreen({ navigation, route }: Props) {
         !route.params.startAt ||
         !route.params.endAt
       ) {
-        Alert.alert('Error', 'Event date and time are missing.');
+        Alert.alert(
+          'Error',
+          'Event date and time are missing.'
+        );
         return;
       }
 
@@ -191,6 +274,13 @@ export function CreateEventScreen({ navigation, route }: Props) {
     navigation.navigate('PickLocation', updatedDetails);
   };
 
+  const screenTitle =
+    props.mode === 'edit'
+      ? 'Edit Event Details'
+      : getTemplate(
+          props.screen.route.params?.presetId
+        )?.name ?? 'Add Custom Event';
+
   return (
     <LinearGradient
       colors={gradients.background}
@@ -199,46 +289,54 @@ export function CreateEventScreen({ navigation, route }: Props) {
     >
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={
+          Platform.OS === 'ios' ? 'padding' : undefined
+        }
       >
         <ScreenHeader
-          title={
-            getTemplate(route.params?.presetId)?.name ??
-            'Add Custom Event'
-          }
-          onBack={() => navigation.goBack()}
+          title={screenTitle}
+          onBack={() => props.screen.navigation.goBack()}
         />
 
         <View style={styles.content}>
-          <View style={styles.photoArea}>
-            <EditPhoto
-              photoUri={eventPhoto}
-              onPress={openPhotoOptions}
-              size={120}
-              disabled={photoLoading}
-            />
+          {!isEditing && (
+            <View style={styles.photoArea}>
+              <EditPhoto
+                photoUri={eventPhoto}
+                onPress={openPhotoOptions}
+                size={120}
+                disabled={photoLoading}
+              />
 
-            <Text style={styles.photoText}>
-              {photoLoading
-                ? 'Loading Photo...'
-                : eventPhoto
-                  ? 'Change Photo'
-                  : 'Add Photo'}
-            </Text>
-          </View>
+              <Text style={styles.photoText}>
+                {photoLoading
+                  ? 'Loading Photo...'
+                  : eventPhoto
+                    ? 'Change Photo'
+                    : 'Add Photo'}
+              </Text>
+            </View>
+          )}
 
-          <View style={styles.form}>
+          <View
+            style={[
+              styles.form,
+              isEditing && styles.editingForm,
+            ]}
+          >
             <TextInput
               value={eventName}
               onChangeText={setEventName}
               placeholder="Event Name"
               placeholderTextColor={colors.white}
               style={styles.input}
+              editable={!saving}
             />
 
             <View style={styles.categoryWrapper}>
               <Pressable
                 style={styles.categoryField}
+                disabled={saving}
                 onPress={() =>
                   setShowCategories((current) => !current)
                 }
@@ -295,6 +393,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
                   placeholderTextColor={colors.white}
                   style={styles.customCategoryInput}
                   autoCapitalize="words"
+                  editable={!saving}
                 />
               )}
             </View>
@@ -302,8 +401,14 @@ export function CreateEventScreen({ navigation, route }: Props) {
 
           <View style={styles.continueContainer}>
             <ContinueButton
-              title="Confirm Details"
-              onPress={handleConfirmDetails}
+              title={
+                saving
+                  ? 'Saving...'
+                  : isEditing
+                    ? 'Save Changes'
+                    : 'Confirm Details'
+              }
+              onPress={() => void handleConfirmDetails()}
             />
           </View>
         </View>
@@ -328,21 +433,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  photoCircle: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: colors.cardDarker,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-
-  eventPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-
   photoText: {
     marginTop: spacing.sm,
     fontFamily: fontFamily.regular,
@@ -353,6 +443,10 @@ const styles = StyleSheet.create({
   form: {
     alignItems: 'center',
     gap: 27,
+  },
+
+  editingForm: {
+    paddingTop: 55,
   },
 
   input: {
