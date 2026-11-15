@@ -89,7 +89,9 @@ function loadScreen(relativePath) {
       console,
       require(id) {
         if (id === 'react/jsx-runtime') return require(id);
-        if (id === 'react') return { ...React, useState: useStateStub };
+        if (id === 'react') return { ...React, useState: useStateStub, useEffect: () => {} };
+        if (id === '@/features/auth/AuthContext') return { useAuth: () => ({ user: null }) };
+        if (id === '@/features/events/eventTimes') return { formatEventDate: () => '', formatEventTime: () => '' };
         if (id === 'react-native') return reactNative;
         if (id === '@expo/vector-icons') return { Ionicons: host('Ionicons') };
         if (id === 'expo-linear-gradient') {

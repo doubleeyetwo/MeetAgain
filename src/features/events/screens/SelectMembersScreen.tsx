@@ -268,7 +268,7 @@ export function SelectMembersScreen({
       return;
     }
 
-    navigation.navigate('ReviewEvent', {
+    navigation.navigate('PickTime', {
       ...route.params,
       selectedMemberIds: selectedIds,
       matchingGroupId: matchingGroup?.id,

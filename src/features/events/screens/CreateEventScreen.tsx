@@ -177,7 +177,7 @@ export function CreateEventScreen({ navigation, route }: Props) {
     return;
   }
 
-  navigation.navigate('PickLocation', updatedDetails);
+  navigation.navigate('SelectMembers', updatedDetails);
 };
 
   return (

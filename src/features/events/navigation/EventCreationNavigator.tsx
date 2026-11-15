@@ -22,6 +22,7 @@ export type EventCreationStackParamList = {
         startAt?: string;
         endAt?: string;
         selectedMemberIds?: string[];
+        matchingGroupId?: string;
         editingFromReview?: boolean;
       }
     | undefined;
@@ -32,9 +33,10 @@ export type EventCreationStackParamList = {
     presetId?: string;
     eventPhoto?: string | null;
     location?: string;
-    startAt?: string;
-    endAt?: string;
-    selectedMemberIds?: string[];
+    startAt: string;
+    endAt: string;
+    selectedMemberIds: string[];
+    matchingGroupId?: string;
     editingFromReview?: boolean;
   };
 
@@ -46,7 +48,8 @@ export type EventCreationStackParamList = {
     location?: string;
     startAt?: string;
     endAt?: string;
-    selectedMemberIds?: string[];
+    selectedMemberIds: string[];
+    matchingGroupId?: string;
     editingFromReview?: boolean;
   };
 
@@ -55,8 +58,6 @@ export type EventCreationStackParamList = {
     category: string;
     presetId?: string;
     eventPhoto?: string | null;
-    startAt: string;
-    endAt: string;
     location?: string;
   };
 
@@ -91,12 +92,12 @@ export function EventCreationNavigator() {
         component={CreateEventScreen}
       />
       <Stack.Screen
-        name="PickTime"
-        component={PickTimeScreen}
-      />
-      <Stack.Screen
         name="SelectMembers"
         component={SelectMembersScreen}
+      />
+      <Stack.Screen
+        name="PickTime"
+        component={PickTimeScreen}
       />
       <Stack.Screen
         name="PickLocation"

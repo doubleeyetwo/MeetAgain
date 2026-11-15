@@ -48,9 +48,12 @@ export function PickTimeScreen({
 
   // The one copy of the event's time. When the heat map is added, its drag
   // should call setTimes too; the dropdowns then show whatever it picked.
-  const [times, setTimes] = useState<EventTimes>(() =>
-    createDefaultTimes(range)
-  );
+  const [times, setTimes] = useState<EventTimes>(() => {
+    const { startAt, endAt } = route.params;
+    return startAt && endAt
+      ? { start: new Date(startAt), end: new Date(endAt) }
+      : createDefaultTimes(range);
+  });
 
   const dateOptions = useMemo(
     () => getDateOptions(range),
@@ -64,11 +67,17 @@ export function PickTimeScreen({
     return;
   }
 
-  navigation.navigate('SelectMembers', {
-    ...route.params,
+  const { editingFromReview, ...details } = route.params;
+  const params = {
+    ...details,
     startAt: times.start.toISOString(),
     endAt: times.end.toISOString(),
-  });
+  };
+  if (editingFromReview) {
+    navigation.navigate({ name: 'ReviewEvent', params, merge: true, pop: true });
+    return;
+  }
+  navigation.navigate('PickLocation', params);
 };
 
   return (
