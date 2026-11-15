@@ -1734,7 +1734,7 @@ const styles = StyleSheet.create({
   confirmContainer: {
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 32,
+    paddingBottom: 40,
     backgroundColor: colors.bgEnd,
   },
 

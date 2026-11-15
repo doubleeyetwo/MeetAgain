@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   confirmContainer: {
     paddingHorizontal: 13,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
+    paddingBottom: 40,
     backgroundColor: 'transparent',
   },
 });

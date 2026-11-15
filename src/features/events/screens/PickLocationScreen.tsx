@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
 
   bottomArea: {
     marginTop: 'auto',
-    paddingBottom: spacing.lg,
+    paddingBottom: 40,
     gap: spacing.md,
   },
 

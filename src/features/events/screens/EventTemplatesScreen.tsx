@@ -158,11 +158,9 @@ const styles = StyleSheet.create({
 
   customButtonContainer: {
     paddingHorizontal: 13,
-    paddingTop: spacing.sm,
-    paddingBottom: 32,
+    paddingBottom: 40,
     backgroundColor: 'transparent',
   },
-
   pressed: {
     opacity: 0.85,
   },

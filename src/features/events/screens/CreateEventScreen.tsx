@@ -435,6 +435,6 @@ const styles = StyleSheet.create({
 
   continueContainer: {
     marginTop: 'auto',
-    paddingBottom: spacing.lg,
+    paddingBottom: 40,
   },
 });
