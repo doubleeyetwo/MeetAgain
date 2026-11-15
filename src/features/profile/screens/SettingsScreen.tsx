@@ -190,6 +190,8 @@ export function SettingsScreen() {
     setError('');
     try {
       await disconnectGoogleCalendar(user.uid);
+      ++calendarStatusRequest.current;
+      setCalendarLoading(false);
       setCalendarImported(false);
       setCalendarLastUpdated(null);
     } catch (failure) {
@@ -300,8 +302,7 @@ export function SettingsScreen() {
             <SettingsRow
               icon="eye-off-outline"
               label="Privacy Settings"
-              // Destination is Calendar Privacy (#37).
-              onPress={() => {}}
+              onPress={() => navigation.navigate('PrivacySettings')}
             />
           </SettingsCard>
 

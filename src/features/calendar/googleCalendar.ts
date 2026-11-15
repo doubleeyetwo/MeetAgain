@@ -1,4 +1,4 @@
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, Timestamp, writeBatch } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { buildImportChunks, buildImportRange, BusyInterval, parseBusyIntervals } from '@/features/calendar/googleCalendarHelpers';
 import { clearGoogleCalendarToken } from '@/features/calendar/googleCalendarTokenCache';
@@ -74,7 +74,23 @@ export async function getGoogleCalendarSnapshot(uid: string): Promise<CalendarSn
   };
 }
 
+export async function getCalendarSharing(uid: string): Promise<boolean> {
+  return (await getDoc(doc(db, 'calendarSharing', uid))).exists();
+}
+
+export async function setCalendarSharing(uid: string, enabled: boolean): Promise<void> {
+  const preference = doc(db, 'calendarSharing', uid);
+  if (enabled) {
+    await setDoc(preference, { enabled: true });
+  } else {
+    await deleteDoc(preference);
+  }
+}
+
 export async function disconnectGoogleCalendar(uid: string): Promise<void> {
   clearGoogleCalendarToken(uid);
-  await deleteDoc(doc(db, 'calendarImports', uid));
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'calendarImports', uid));
+  batch.delete(doc(db, 'calendarSharing', uid));
+  await batch.commit();
 }
