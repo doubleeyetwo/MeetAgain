@@ -1,4 +1,4 @@
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, getDocFromServer, serverTimestamp, setDoc, Timestamp, writeBatch } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { buildImportChunks, buildImportRange, BusyInterval, parseBusyIntervals } from '@/features/calendar/googleCalendarHelpers';
 import { clearGoogleCalendarToken } from '@/features/calendar/googleCalendarTokenCache';
@@ -55,8 +55,9 @@ export async function importGoogleCalendar(uid: string, accessToken: string, now
   });
 }
 
-export async function getGoogleCalendarSnapshot(uid: string): Promise<CalendarSnapshot | null> {
-  const snapshot = await getDoc(doc(db, 'calendarImports', uid));
+export async function getGoogleCalendarSnapshot(uid: string, source: 'default' | 'server' = 'default'): Promise<CalendarSnapshot | null> {
+  const ref = doc(db, 'calendarImports', uid);
+  const snapshot = await (source === 'server' ? getDocFromServer(ref) : getDoc(ref));
   if (!snapshot.exists()) return null;
   const data = snapshot.data();
   if (!(data.rangeStart instanceof Timestamp) || !(data.rangeEnd instanceof Timestamp)) return null;

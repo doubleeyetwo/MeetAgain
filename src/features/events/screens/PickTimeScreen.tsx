@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Pressable,
   ScrollView,
@@ -16,6 +17,8 @@ import {
 } from '@/components/Dropdown';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { colors, fontFamily, spacing } from '@/theme';
+import { getGoogleCalendarSnapshot, type CalendarSnapshot } from '@/features/calendar/googleCalendar';
+import { getDayAvailability } from '@/features/events/dayAvailability';
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 import {
@@ -92,7 +95,7 @@ export function PickTimeScreen({
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <EventMonthCalendar initialDate={times.start} />
+        <EventMonthCalendar initialDate={times.start} memberIds={route.params.selectedMemberIds} />
 
         <View style={styles.timeCard}>
           <TimeRow
@@ -144,7 +147,19 @@ const monthOptions = Array.from({ length: 12 }, (_, value) => ({
   label: new Date(2024, value, 1).toLocaleDateString('en-US', { month: 'long' }),
 }));
 
-function EventMonthCalendar({ initialDate }: { initialDate: Date }) {
+function EventMonthCalendar({ initialDate, memberIds }: { initialDate: Date; memberIds: string[] }) {
+  const [calendars, setCalendars] = useState<(CalendarSnapshot | null)[] | null>(null);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setCalendars(null);
+    // Read from the server so returning to this screen respects current sharing permissions.
+    void Promise.all([...new Set(memberIds)].map((uid) =>
+      getGoogleCalendarSnapshot(uid, 'server').catch(() => null)
+    )).then((snapshots) => {
+      if (active) setCalendars(snapshots);
+    });
+    return () => { active = false; };
+  }, [memberIds]));
   const [month, setMonth] = useState(() => new Date(initialDate.getFullYear(), initialDate.getMonth(), 1));
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
@@ -156,6 +171,10 @@ function EventMonthCalendar({ initialDate }: { initialDate: Date }) {
   });
   const leadingDays = (month.getDay() + 6) % 7;
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  // Calendar coverage is continuous, so checking both ends covers the displayed month.
+  const hasUnknownCalendars = calendars !== null && [1, daysInMonth].some((day) =>
+    getDayAvailability(new Date(year, monthIndex, day), calendars).unknown > 0
+  );
   const weekCount = Math.ceil((leadingDays + daysInMonth) / 7);
   const shiftMonth = (offset: number) => setMonth((current) =>
     new Date(current.getFullYear(), current.getMonth() + offset, 1)
@@ -196,9 +215,21 @@ function EventMonthCalendar({ initialDate }: { initialDate: Date }) {
         <View key={week} style={styles.week}>
           {weekdays.map((day, column) => {
             const date = new Date(year, monthIndex, week * 7 + column - leadingDays + 1);
+            const availability = date.getMonth() === monthIndex && calendars
+              ? getDayAvailability(date, calendars)
+              : null;
+            const shade = availability?.shade;
+            const percent = availability?.freePercentage;
+            const dateLabel = date.toLocaleDateString();
+            const availabilityLabel = availability && percent != null
+              ? `${dateLabel}, ${percent.toFixed(1)}% free together, ${availability.unknown} calendars unknown`
+              : availability ? `${dateLabel}, availability unknown` : dateLabel;
             return (
-              <View key={day} style={styles.dayCell}>
-                <Text style={[styles.dayNumber, date.getMonth() !== monthIndex && styles.outsideMonth]}>
+              <View key={day} style={[styles.dayCell, shade && { backgroundColor: colors.freeDay[shade] }]}>
+                <Text
+                  accessibilityLabel={availabilityLabel}
+                  style={[styles.dayNumber, date.getMonth() !== monthIndex && styles.outsideMonth]}
+                >
                   {date.getDate()}
                 </Text>
               </View>
@@ -206,6 +237,9 @@ function EventMonthCalendar({ initialDate }: { initialDate: Date }) {
           })}
         </View>
       ))}
+      {hasUnknownCalendars && (
+        <Text style={styles.availabilityLegend}>Some Calendars are unknown</Text>
+      )}
     </View>
   );
 }
@@ -287,7 +321,8 @@ const styles = StyleSheet.create({
   monthSelectors: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   week: { flexDirection: 'row', gap: 4 },
   weekday: { flex: 1, textAlign: 'center', paddingVertical: 8, color: colors.white, fontFamily: fontFamily.semibold },
-  dayCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+  dayCell: { flex: 1, aspectRatio: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  availabilityLegend: { color: colors.white, opacity: 0.75, fontFamily: fontFamily.regular, fontSize: 12, marginTop: spacing.xs },
   dayNumber: { color: colors.white, fontFamily: fontFamily.semibold, fontSize: 15 },
   outsideMonth: { opacity: 0.38 },
 
