@@ -29,6 +29,7 @@ type DropdownProps<T> = {
   value: T;
   onChange: (value: T) => void;
   invalid?: boolean;
+  variant?: 'field' | 'heading';
   style?: StyleProp<ViewStyle>;
 };
 
@@ -53,6 +54,7 @@ export function Dropdown<T extends string | number>({
   value,
   onChange,
   invalid = false,
+  variant = 'field',
   style,
 }: DropdownProps<T>) {
   const fieldRef = useRef<PressableInstance>(null);
@@ -111,15 +113,17 @@ export function Dropdown<T extends string | number>({
         onPress={open}
         accessibilityRole="button"
         accessibilityLabel={`${accessibilityLabel}, ${displayText}`}
+        accessibilityState={{ expanded: anchor !== null }}
         style={({ pressed }) => [
           styles.field,
+          variant === 'heading' && styles.headingField,
           invalid && styles.invalidField,
           pressed && styles.pressed,
           style,
         ]}
       >
         <Text
-          style={styles.fieldText}
+          style={[styles.fieldText, variant === 'heading' && styles.headingText]}
           numberOfLines={1}
         >
           {displayText}
@@ -127,8 +131,8 @@ export function Dropdown<T extends string | number>({
 
         <Ionicons
           name={anchor ? 'chevron-up' : 'chevron-down'}
-          size={16}
-          color={colors.white}
+          size={variant === 'heading' ? 13 : 16}
+          color={variant === 'heading' ? colors.purpleAccentGradientStart : colors.white}
         />
       </Pressable>
 
@@ -200,6 +204,17 @@ const styles = StyleSheet.create({
 
   invalidField: {
     borderColor: colors.red,
+  },
+
+  headingField: {
+    height: 44,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 4,
+  },
+
+  headingText: {
+    fontFamily: fontFamily.semibold,
+    fontSize: 18,
   },
 
   fieldText: {
