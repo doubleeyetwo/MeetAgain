@@ -7,6 +7,7 @@ import { GroupOverviewScreen } from '@/features/messages/screens/GroupOverViewSc
 import { GroupMembersScreen } from '@/features/messages/screens/GroupMembersScreen';
 import { OtherProfileScreen } from '@/features/profile/screens/OtherProfileScreen';
 import { EditGroupScreen } from '@/features/messages/screens/EditGroupScreen';
+import { PastEventScreen } from '@/features/events/screens/PastEventScreen';
 
 const Stack = createNativeStackNavigator<MessagesStackParamList>();
 
@@ -19,6 +20,7 @@ export function MessagesNavigator() {
       <Stack.Screen name="GroupOverview" component={GroupOverviewScreen} />
       <Stack.Screen name="GroupMembers" component={GroupMembersScreen} />
       <Stack.Screen name="MemberProfile" component={OtherProfileScreen} />
+      <Stack.Screen name="PastEvent" component={PastEventScreen} />
       <Stack.Screen name="GroupSettings" component={EditGroupScreen} />
     </Stack.Navigator>
   );

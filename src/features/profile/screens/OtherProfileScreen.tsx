@@ -20,6 +20,7 @@ import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { Friendship, removeFriendship, respondToFriendRequest, sendFriendRequest, watchFriendships } from '@/features/friends/friendships';
 import { collections } from '@/data/firestorePaths';
+import { PastEventsGrid } from '@/features/events/PastEventsGrid';
 import type { MessagesStackParamList, ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { PublicProfile } from '@/types/models';
@@ -29,11 +30,6 @@ import { useFriendCount } from '@/features/friends/useFriendCount';
 type Props =
   | NativeStackScreenProps<ProfileStackParamList, 'OtherProfile'>
   | NativeStackScreenProps<MessagesStackParamList, 'MemberProfile'>;
-
-// Memory tiles are 104x93 at a 367pt frame width; keep the ratio and let the row divide the width.
-const TILE_ASPECT = 104 / 93;
-const TILE_RADIUS = 10;
-const GRID_GAP = 10;
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -54,43 +50,6 @@ function formatBirthday(iso?: string): string {
       ? 'th'
       : { 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th';
   return `${month} ${day}${suffix}, ${year}`;
-}
-
-type Memory = { id: string; photoUrl: string };
-
-function MemoriesGrid({ memories, emptyMessage }: { memories: Memory[]; emptyMessage: string }) {
-  if (memories.length === 0) {
-    return (
-      <View style={styles.emptyMemories}>
-        <Ionicons name="images-outline" size={32} color={colors.white} />
-        <Text style={styles.emptyMemoriesText}>{emptyMessage}</Text>
-      </View>
-    );
-  }
-
-  // Pad the final row so three tiles per row keep their width.
-  const rows: (Memory | null)[][] = [];
-  for (let index = 0; index < memories.length; index += 3) {
-    const row: (Memory | null)[] = memories.slice(index, index + 3);
-    while (row.length < 3) row.push(null);
-    rows.push(row);
-  }
-
-  return (
-    <View style={styles.grid}>
-      {rows.map((row, rowIndex) => (
-        <View key={rowIndex} style={styles.gridRow}>
-          {row.map((memory, cellIndex) =>
-            memory ? (
-              <Image key={memory.id} source={{ uri: memory.photoUrl }} style={styles.tile} />
-            ) : (
-              <View key={`empty-${cellIndex}`} style={styles.tileSpacer} />
-            ),
-          )}
-        </View>
-      ))}
-    </View>
-  );
 }
 
 export function OtherProfileScreen({ navigation, route }: Props) {
@@ -210,6 +169,12 @@ export function OtherProfileScreen({ navigation, route }: Props) {
     void act(() => sendFriendRequest(user.uid, recipient));
   };
   const birthday = formatBirthday(profile?.dateOfBirth);
+
+  // Both accounts need to register PastEvent with the same params.
+  const openPastEvent = (eventId: string) => {
+    (navigation as NativeStackScreenProps<ProfileStackParamList, 'OtherProfile'>['navigation'])
+      .navigate('PastEvent', { eventId });
+  };
 
   const confirmUnfriend = () => {
     if (!user || busy || requestLock.current || confirmationOpen.current || relationship?.status !== 'accepted') return;
@@ -367,7 +332,13 @@ export function OtherProfileScreen({ navigation, route }: Props) {
               </View>
             ) : null}
 
-            <MemoriesGrid memories={[]} emptyMessage="Their events will show up here." />
+            {/* Only sees events the viewer was also invited to; private events never appear. */}
+            <PastEventsGrid
+              profileUid={uid}
+              viewerUid={user?.uid}
+              emptyMessage={isSelf ? 'You have no past events yet.' : 'No past events together yet.'}
+              onOpenEvent={openPastEvent}
+            />
           </> : null}
         </ScrollView>
       </SafeAreaView>
@@ -419,22 +390,6 @@ const styles = StyleSheet.create({
     width: 228,
     marginTop: spacing.lg,
   },
-  grid: {
-    width: '100%',
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.lg,
-    gap: GRID_GAP,
-  },
-  gridRow: { flexDirection: 'row', gap: GRID_GAP },
-  tile: { flex: 1, aspectRatio: TILE_ASPECT, borderRadius: TILE_RADIUS },
-  tileSpacer: { flex: 1 },
-  emptyMemories: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-  },
-  emptyMemoriesText: { ...text.body, color: colors.white, opacity: 0.6, textAlign: 'center' },
   pressed: { opacity: 0.85 },
   error: { ...text.body, color: '#ff9aa8', textAlign: 'center', marginTop: spacing.md },
   friendActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.md },
