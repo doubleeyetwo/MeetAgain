@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
@@ -21,9 +22,15 @@ import {
   pickPhotoFromLibrary,
   takeProfilePhoto,
 } from '@/features/auth/profilePhoto';
-import { colors, fontFamily, radius, spacing } from '@/theme';
+import {
+  colors,
+  fontFamily,
+  radius,
+  spacing,
+  gradients,
+  gradientDirection,
+} from '@/theme';
 import { EditPhoto } from '@/components/EditPhoto';
-
 
 import { getTemplate } from '@/features/events/eventTemplates';
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
@@ -44,32 +51,35 @@ const EVENT_CATEGORIES = [
 
 export function CreateEventScreen({ navigation, route }: Props) {
   const [eventName, setEventName] = useState(
-  route.params?.eventName ?? ''
-);
+    route.params?.eventName ?? ''
+  );
+
   const [category, setCategory] = useState(() => {
-  const initialCategory = route.params?.category ?? '';
+    const initialCategory = route.params?.category ?? '';
 
-  if (
-    initialCategory &&
-    !EVENT_CATEGORIES.includes(initialCategory)
-  ) {
-    return 'Other';
-  }
+    if (
+      initialCategory &&
+      !EVENT_CATEGORIES.includes(initialCategory)
+    ) {
+      return 'Other';
+    }
 
-  return initialCategory;
-});
+    return initialCategory;
+  });
 
   const [customCategory, setCustomCategory] = useState(
-  route.params?.category &&
-    !EVENT_CATEGORIES.includes(route.params.category)
-    ? route.params.category
-    : ''
-);
+    route.params?.category &&
+      !EVENT_CATEGORIES.includes(route.params.category)
+      ? route.params.category
+      : ''
+  );
+
   const [showCategories, setShowCategories] = useState(false);
 
   const [eventPhoto, setEventPhoto] = useState<string | null>(
-  route.params?.eventPhoto ?? null
-);
+    route.params?.eventPhoto ?? null
+  );
+
   const [photoLoading, setPhotoLoading] = useState(false);
 
   const resolvedCategory =
@@ -145,161 +155,166 @@ export function CreateEventScreen({ navigation, route }: Props) {
   };
 
   const handleConfirmDetails = () => {
-  const updatedDetails = {
-    eventName: eventName.trim(),
-    category: resolvedCategory,
-    presetId: route.params?.presetId,
-    eventPhoto,
-  };
+    const updatedDetails = {
+      eventName: eventName.trim(),
+      category: resolvedCategory,
+      presetId: route.params?.presetId,
+      eventPhoto,
+    };
 
-  if (route.params?.editingFromReview) {
-    if (
-      !route.params.startAt ||
-      !route.params.endAt
-    ) {
-      Alert.alert('Error', 'Event date and time are missing.');
+    if (route.params?.editingFromReview) {
+      if (
+        !route.params.startAt ||
+        !route.params.endAt
+      ) {
+        Alert.alert('Error', 'Event date and time are missing.');
+        return;
+      }
+
+      navigation.navigate({
+        name: 'ReviewEvent',
+        params: {
+          ...route.params,
+          ...updatedDetails,
+          startAt: route.params.startAt,
+          endAt: route.params.endAt,
+          selectedMemberIds:
+            route.params.selectedMemberIds ?? [],
+        },
+        merge: true,
+        pop: true,
+      });
+
       return;
     }
 
-    navigation.navigate({
-      name: 'ReviewEvent',
-      params: {
-        ...route.params,
-        ...updatedDetails,
-        startAt: route.params.startAt,
-        endAt: route.params.endAt,
-        selectedMemberIds:
-          route.params.selectedMemberIds ?? [],
-      },
-      merge: true,
-      pop: true,
-    });
-
-    return;
-  }
-
-  navigation.navigate('PickLocation', updatedDetails);
-};
+    navigation.navigate('PickLocation', updatedDetails);
+  };
 
   return (
-    <KeyboardAvoidingView
+    <LinearGradient
+      colors={gradients.background}
+      {...gradientDirection.vertical}
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenHeader
-        title={
-          getTemplate(route.params?.presetId)?.name ??
-          'Add Custom Event'
-        }
-        onBack={() => navigation.goBack()}
-      />
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScreenHeader
+          title={
+            getTemplate(route.params?.presetId)?.name ??
+            'Add Custom Event'
+          }
+          onBack={() => navigation.goBack()}
+        />
 
-      <View style={styles.content}>
-  <View style={styles.photoArea}>
-    <EditPhoto
-      photoUri={eventPhoto}
-      onPress={openPhotoOptions}
-      size={120}
-      disabled={photoLoading}
-    />
+        <View style={styles.content}>
+          <View style={styles.photoArea}>
+            <EditPhoto
+              photoUri={eventPhoto}
+              onPress={openPhotoOptions}
+              size={120}
+              disabled={photoLoading}
+            />
 
-    <Text style={styles.photoText}>
-      {photoLoading
-        ? 'Loading Photo...'
-        : eventPhoto
-          ? 'Change Photo'
-          : 'Add Photo'}
-    </Text>
-</View>
+            <Text style={styles.photoText}>
+              {photoLoading
+                ? 'Loading Photo...'
+                : eventPhoto
+                  ? 'Change Photo'
+                  : 'Add Photo'}
+            </Text>
+          </View>
 
-        <View style={styles.form}>
-          <TextInput
-            value={eventName}
-            onChangeText={setEventName}
-            placeholder="Event Name"
-            placeholderTextColor={colors.white}
-            style={styles.input}
-          />
+          <View style={styles.form}>
+            <TextInput
+              value={eventName}
+              onChangeText={setEventName}
+              placeholder="Event Name"
+              placeholderTextColor={colors.white}
+              style={styles.input}
+            />
 
-          <View style={styles.categoryWrapper}>
-            <Pressable
-              style={styles.categoryField}
-              onPress={() =>
-                setShowCategories((current) => !current)
-              }
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  !category && styles.placeholderText,
-                ]}
-              >
-                {category || 'Event Category'}
-              </Text>
-
-              <Ionicons
-                name={
-                  showCategories
-                    ? 'chevron-up'
-                    : 'chevron-down'
+            <View style={styles.categoryWrapper}>
+              <Pressable
+                style={styles.categoryField}
+                onPress={() =>
+                  setShowCategories((current) => !current)
                 }
-                size={20}
-                color={colors.white}
-              />
-            </Pressable>
-
-            {showCategories && (
-              <ScrollView
-                style={styles.dropdown}
-                nestedScrollEnabled
-                keyboardShouldPersistTaps="always"
-                showsVerticalScrollIndicator={false}
               >
-                {EVENT_CATEGORIES.map((item) => (
-                  <Pressable
-                    key={item}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setCategory(item);
-                      setShowCategories(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownText}>
-                      {item}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            )}
+                <Text
+                  style={[
+                    styles.categoryText,
+                    !category && styles.placeholderText,
+                  ]}
+                >
+                  {category || 'Event Category'}
+                </Text>
 
-            {category === 'Other' && (
-              <TextInput
-                value={customCategory}
-                onChangeText={setCustomCategory}
-                placeholder="Enter Custom Category"
-                placeholderTextColor={colors.white}
-                style={styles.customCategoryInput}
-                autoCapitalize="words"
-              />
-            )}
+                <Ionicons
+                  name={
+                    showCategories
+                      ? 'chevron-up'
+                      : 'chevron-down'
+                  }
+                  size={20}
+                  color={colors.white}
+                />
+              </Pressable>
+
+              {showCategories && (
+                <ScrollView
+                  style={styles.dropdown}
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="always"
+                  showsVerticalScrollIndicator={false}
+                >
+                  {EVENT_CATEGORIES.map((item) => (
+                    <Pressable
+                      key={item}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setCategory(item);
+                        setShowCategories(false);
+                      }}
+                    >
+                      <Text style={styles.dropdownText}>
+                        {item}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+
+              {category === 'Other' && (
+                <TextInput
+                  value={customCategory}
+                  onChangeText={setCustomCategory}
+                  placeholder="Enter Custom Category"
+                  placeholderTextColor={colors.white}
+                  style={styles.customCategoryInput}
+                  autoCapitalize="words"
+                />
+              )}
+            </View>
+          </View>
+
+          <View style={styles.continueContainer}>
+            <ContinueButton
+              title="Confirm Details"
+              onPress={handleConfirmDetails}
+            />
           </View>
         </View>
-
-        <View style={styles.continueContainer}>
-          <ContinueButton
-            title="Confirm Details"
-            onPress={handleConfirmDetails}
-          />
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
 
   content: {

@@ -42,6 +42,7 @@ type SavedEvent = {
   reminderMinutesBefore?: number | null;
   items?: EventItem[];
   tasks?: EventTask[];
+  rsvps?: Record<string, 'yes' | 'no'>;
 };
 
 function SectionHeading({ title }: { title: string }) {
@@ -424,7 +425,9 @@ const handleSave = async () => {
             style={styles.attendeeRow}
             contentContainerStyle={styles.attendeeContent}
           >
-            {(event.participantIds ?? []).map((id) => {
+            {(event.participantIds ?? [])
+              .filter((id) => event.rsvps?.[id] === 'yes')
+              .map((id) => {
               const photo = attendeePhotos[id];
 
               return (

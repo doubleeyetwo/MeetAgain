@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -11,10 +12,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
-import { colors, fontFamily, radius, spacing, text } from '@/theme';
+import {
+  colors,
+  fontFamily,
+  radius,
+  spacing,
+  text,
+  gradients,
+  gradientDirection,
+} from '@/theme';
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
@@ -85,119 +95,123 @@ export function PickLocationScreen({
     });
   };
 
-
   return (
-    <KeyboardAvoidingView
+    <LinearGradient
+      colors={gradients.background}
+      {...gradientDirection.vertical}
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenHeader
-        title="Choose Location"
-        onBack={() => navigation.goBack()}
-      />
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScreenHeader
+          title="Choose Location"
+          onBack={() => navigation.goBack()}
+        />
 
-      <View style={styles.content}>
-        <Text style={styles.picksHeading}>
-          MeetAgain&apos;s Picks
-        </Text>
+        <View style={styles.content}>
+          <Text style={styles.picksHeading}>
+            MeetAgain&apos;s Picks
+          </Text>
 
-        <ScrollView
-          style={styles.picks}
-          contentContainerStyle={styles.picksContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {MEETAGAIN_PICKS.map((pick) => (
-            <Pressable
-              key={pick.id}
-              onPress={() => handleSelectPick(pick)}
-              style={({ pressed }) => [
-                styles.pickCard,
-                selectedPickId === pick.id &&
-                  styles.pickCardSelected,
-                pressed && styles.pickCardPressed,
-              ]}
-            >
-              <View style={styles.pickDetails}>
-                <Text style={styles.pickName}>
-                  {pick.name}
-                </Text>
+          <ScrollView
+            style={styles.picks}
+            contentContainerStyle={styles.picksContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {MEETAGAIN_PICKS.map((pick) => (
+              <Pressable
+                key={pick.id}
+                onPress={() => handleSelectPick(pick)}
+                style={({ pressed }) => [
+                  styles.pickCard,
+                  selectedPickId === pick.id &&
+                    styles.pickCardSelected,
+                  pressed && styles.pickCardPressed,
+                ]}
+              >
+                <View style={styles.pickDetails}>
+                  <Text style={styles.pickName}>
+                    {pick.name}
+                  </Text>
 
-                <Text style={styles.pickAddress}>
-                  {pick.address}
-                </Text>
+                  <Text style={styles.pickAddress}>
+                    {pick.address}
+                  </Text>
 
-                <View style={styles.pickPriceRow}>
-                  <Text style={styles.pickPrice}>
-                    {pick.price}
+                  <View style={styles.pickPriceRow}>
+                    <Text style={styles.pickPrice}>
+                      {pick.price}
+                    </Text>
+
+                    <Ionicons
+                      name="person-outline"
+                      size={13}
+                      color={colors.white}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.pickRating}>
+                  <Text style={styles.pickRatingText}>
+                    {pick.rating}
                   </Text>
 
                   <Ionicons
-                    name="person-outline"
-                    size={13}
+                    name="star"
+                    size={16}
                     color={colors.white}
                   />
                 </View>
-              </View>
-
-              <View style={styles.pickRating}>
-                <Text style={styles.pickRatingText}>
-                  {pick.rating}
-                </Text>
 
                 <Ionicons
-                  name="star"
-                  size={16}
+                  name="chevron-forward"
+                  size={20}
                   color={colors.white}
                 />
-              </View>
+              </Pressable>
+            ))}
+          </ScrollView>
 
+          <View style={styles.bottomArea}>
+            <View style={styles.searchField}>
               <Ionicons
-                name="chevron-forward"
-                size={20}
+                name="location-outline"
+                size={16}
                 color={colors.white}
               />
-            </Pressable>
-          ))}
-        </ScrollView>
 
-        <View style={styles.bottomArea}>
-          <View style={styles.searchField}>
-            <Ionicons
-              name="location-outline"
-              size={16}
-              color={colors.white}
-            />
+              <TextInput
+                value={address}
+                onChangeText={handleChangeAddress}
+                placeholder="Enter Address"
+                placeholderTextColor={colors.white}
+                style={styles.searchInput}
+                autoCapitalize="words"
+                returnKeyType="done"
+                onSubmitEditing={handleConfirmLocation}
+              />
+            </View>
 
-            <TextInput
-              value={address}
-              onChangeText={handleChangeAddress}
-              placeholder="Enter Address"
-              placeholderTextColor={colors.white}
-              style={styles.searchInput}
-              autoCapitalize="words"
-              returnKeyType="done"
-              onSubmitEditing={handleConfirmLocation}
+            {error ? (
+              <Text style={styles.errorText}>{error}</Text>
+            ) : null}
+
+            <ContinueButton
+              title="Confirm Location"
+              onPress={handleConfirmLocation}
             />
           </View>
-
-          {error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : null}
-
-          <ContinueButton
-            title="Confirm Location"
-            onPress={handleConfirmLocation}
-          />
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
 
   content: {

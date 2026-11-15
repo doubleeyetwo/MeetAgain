@@ -1,3 +1,4 @@
+
 import { useMemo, useState } from 'react';
 import {
   ScrollView,
@@ -6,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ContinueButton } from '@/components/ContinueButton';
 import {
@@ -13,7 +15,13 @@ import {
   type DropdownOption,
 } from '@/components/Dropdown';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { colors, fontFamily, spacing } from '@/theme';
+import {
+  colors,
+  fontFamily,
+  spacing,
+  gradients,
+  gradientDirection,
+} from '@/theme';
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 import {
@@ -58,19 +66,23 @@ export function PickTimeScreen({
   const error = validateEventTimes(times);
 
   const handleConfirmTime = () => {
-  if (error) {
-    return;
-  }
+    if (error) {
+      return;
+    }
 
-  navigation.navigate('SelectMembers', {
-    ...route.params,
-    startAt: times.start.toISOString(),
-    endAt: times.end.toISOString(),
-  });
-};
+    navigation.navigate('SelectMembers', {
+      ...route.params,
+      startAt: times.start.toISOString(),
+      endAt: times.end.toISOString(),
+    });
+  };
 
   return (
-    <View style={styles.screen}>
+    <LinearGradient
+      colors={gradients.background}
+      {...gradientDirection.vertical}
+      style={styles.screen}
+    >
       <ScreenHeader
         title="Pick a Time"
         onBack={() => navigation.goBack()}
@@ -79,7 +91,8 @@ export function PickTimeScreen({
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}        >
+        showsVerticalScrollIndicator={false}
+      >
         {/* The availability calendar and heat map go above the time card. */}
 
         <View style={styles.timeCard}>
@@ -122,7 +135,7 @@ export function PickTimeScreen({
           disabled={error !== null}
         />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -177,7 +190,6 @@ function TimeRow({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
 
   scrollView: {
@@ -231,6 +243,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
   },
 });

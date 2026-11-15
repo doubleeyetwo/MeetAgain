@@ -8,10 +8,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
-import { colors, fontFamily, spacing } from '@/theme';
+import {
+  colors,
+  fontFamily,
+  spacing,
+  gradients,
+  gradientDirection,
+} from '@/theme';
 
 import {
   EVENT_TEMPLATES,
@@ -37,7 +44,11 @@ export function EventTemplatesScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.screen}>
+    <LinearGradient
+      colors={gradients.background}
+      {...gradientDirection.vertical}
+      style={styles.screen}
+    >
       <ScreenHeader title="Event Templates" />
 
       <ScrollView
@@ -89,14 +100,13 @@ export function EventTemplatesScreen({ navigation }: Props) {
           onPress={openCustomEvent}
         />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
 
   scrollView: {
@@ -150,7 +160,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingTop: spacing.sm,
     paddingBottom: 32,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
   },
 
   pressed: {

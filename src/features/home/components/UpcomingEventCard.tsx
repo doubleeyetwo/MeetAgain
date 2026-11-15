@@ -21,9 +21,8 @@ export type UpcomingEvent = {
   location: string;
   eventPhoto?: string | null;
   attendeeCount?: number;
+  rsvpStatus?: 'yes' | 'no';
 };
-import { useState } from 'react';
- 
 
 type Props = {
   event: UpcomingEvent;
@@ -53,8 +52,6 @@ export function UpcomingEventCard({
   onRSVP,
   onDecline,
 }: Props) {
-  const [isRSVPed, setIsRSVPed] = useState(false);
-
   const background = getEventBackground(
     event.category,
     event.id,
@@ -146,21 +143,27 @@ export function UpcomingEventCard({
 
               <Pressable
                 onPress={(e) => {
-                    e.stopPropagation();
-                    setIsRSVPed((previous) => !previous);
+                  e.stopPropagation();
+                  onRSVP?.(event);
                 }}
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={`RSVP to ${event.title}`}
-                accessibilityState={{ selected: isRSVPed }}
+                accessibilityState={{
+                  selected: event.rsvpStatus === 'yes',
+                }}
                 style={styles.actionButton}
-                >
+              >
                 <Ionicons
-                    name={isRSVPed ? 'thumbs-up' : 'thumbs-up-outline'}
-                    size={21}
-                    color={colors.white}
+                  name={
+                    event.rsvpStatus === 'yes'
+                      ? 'thumbs-up'
+                      : 'thumbs-up-outline'
+                  }
+                  size={21}
+                  color={colors.white}
                 />
-                </Pressable>
+              </Pressable>
             </View>
           </View>
         </LinearGradient>

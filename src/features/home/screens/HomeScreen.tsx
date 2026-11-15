@@ -11,8 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   collection,
+  doc,
   onSnapshot,
   query,
+  updateDoc,
   where,
   type Timestamp,
 } from 'firebase/firestore';
@@ -42,13 +44,14 @@ type SavedEvent = {
   location?: string;
   photoURL?: string | null;
   participantIds?: string[];
+  rsvps?: Record<string, 'yes' | 'no'>;
 };
 
 export function HomeScreen() {
   const { user } = useAuth();
 
-const navigation =
-  useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<AppStackParamList>>();
 
   const [upcomingEvents, setUpcomingEvents] = useState<
     UpcomingEvent[]
@@ -67,7 +70,6 @@ const navigation =
     setLoading(true);
     setError(false);
 
-    // Find events where the signed-in user is a participant.
     const eventsQuery = query(
       collection(db, 'events'),
       where('participantIds', 'array-contains', user.uid)
@@ -83,6 +85,11 @@ const navigation =
             const data = document.data() as SavedEvent;
 
             if (!data.startAt || !data.endAt) {
+              return [];
+            }
+
+            // Declined events do not appear in the Home feed.
+            if (data.rsvps?.[user.uid] === 'no') {
               return [];
             }
 
@@ -102,14 +109,17 @@ const navigation =
                 endAt,
                 location: data.location ?? '',
                 eventPhoto: data.photoURL ?? null,
-                attendeeCount: 0,
+                attendeeCount: Object.values(data.rsvps ?? {}).filter(
+                  (status) => status === 'yes'
+                ).length,
+                rsvpStatus: data.rsvps?.[user.uid],
               },
             ];
           })
           .sort(
             (a, b) =>
               a.startAt.getTime() - b.startAt.getTime()
-  );
+          );
 
         setUpcomingEvents(events);
         setLoading(false);
@@ -128,6 +138,21 @@ const navigation =
 
     return unsubscribe;
   }, [user?.uid]);
+
+  const handleRSVP = async (
+    event: UpcomingEvent,
+    status: 'yes' | 'no'
+  ) => {
+    if (!user?.uid) return;
+
+    try {
+      await updateDoc(doc(db, 'events', event.id), {
+        [`rsvps.${user.uid}`]: status,
+      });
+    } catch (updateError) {
+      console.error('Could not update RSVP:', updateError);
+    }
+  };
 
   return (
     <LinearGradient
@@ -195,11 +220,17 @@ const navigation =
                 <UpcomingEventCard
                   key={event.id}
                   event={event}
-                onPress={(selectedEvent) => {
-                  navigation.navigate('EventDetails', {
-                    eventId: selectedEvent.id,
-                  });
-                }}
+                  onPress={(selectedEvent) => {
+                    navigation.navigate('EventDetails', {
+                      eventId: selectedEvent.id,
+                    });
+                  }}
+                  onRSVP={(selectedEvent) =>
+                    handleRSVP(selectedEvent, 'yes')
+                  }
+                  onDecline={(selectedEvent) =>
+                    handleRSVP(selectedEvent, 'no')
+                  }
                 />
               ))
             )}
