@@ -64,6 +64,10 @@ function describeDistance(
   return formatDistance(distanceInMiles(from, pick.coords));
 }
 
+// Keep manual address entry available while testing without Places requests.
+const placeSuggestionsEnabled =
+  process.env.EXPO_PUBLIC_ENABLE_PLACE_SUGGESTIONS !== 'false';
+
 export function PickLocationScreen({
   navigation,
   route,
@@ -85,6 +89,8 @@ export function PickLocationScreen({
   const { category, presetId } = route.params;
 
   useEffect(() => {
+    if (!placeSuggestionsEnabled) return;
+
     // A planner who leaves before the search resolves must not get a state
     // update on an unmounted screen.
     let cancelled = false;
@@ -169,115 +175,119 @@ export function PickLocationScreen({
       />
 
       <View style={styles.content}>
-        <Text style={styles.picksHeading}>
-          MeetAgain&apos;s Picks
-        </Text>
-
-        <ScrollView
-          style={styles.picks}
-          contentContainerStyle={styles.picksContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {loadState === 'loading' ? (
-            <Text style={styles.picksStatus}>
-              Finding places nearby...
+        {placeSuggestionsEnabled ? (
+          <>
+            <Text style={styles.picksHeading}>
+              MeetAgain&apos;s Picks
             </Text>
-          ) : null}
 
-          {loadState === 'error' ? (
-            <Text style={styles.picksStatus}>
-              Could not load suggestions. Enter an address
-              below.
-            </Text>
-          ) : null}
-
-          {loadState === 'ready' && !suggestions.length ? (
-            <Text style={styles.picksStatus}>
-              No places found nearby. Enter an address below.
-            </Text>
-          ) : null}
-
-          {loadState === 'ready' && usingFallbackArea ? (
-            <Text style={styles.picksStatus}>
-              Showing places near campus because location
-              access is off.
-            </Text>
-          ) : null}
-
-          {suggestions.map((pick) => (
-            <Pressable
-              key={pick.id}
-              onPress={() => handleSelectPick(pick)}
-              style={({ pressed }) => [
-                styles.pickCard,
-                selectedPickId === pick.id &&
-                  styles.pickCardSelected,
-                pressed && styles.pickCardPressed,
-              ]}
+            <ScrollView
+              style={styles.picks}
+              contentContainerStyle={styles.picksContent}
+              keyboardShouldPersistTaps="handled"
             >
-              <View style={styles.pickIcon}>
-                <Ionicons
-                  name={pick.icon as never}
-                  size={20}
-                  color={colors.white}
-                />
-              </View>
-
-              <View style={styles.pickDetails}>
-                <Text
-                  style={styles.pickName}
-                  numberOfLines={2}
-                >
-                  {pick.name}
+              {loadState === 'loading' ? (
+                <Text style={styles.picksStatus}>
+                  Finding places nearby...
                 </Text>
+              ) : null}
 
-                {describePick(pick) ? (
-                  <Text
-                    style={styles.pickType}
-                    numberOfLines={1}
-                  >
-                    {describePick(pick)}
-                  </Text>
-                ) : null}
-
-                <Text
-                  style={styles.pickAddress}
-                  numberOfLines={1}
-                >
-                  {pick.address}
+              {loadState === 'error' ? (
+                <Text style={styles.picksStatus}>
+                  Could not load suggestions. Enter an address
+                  below.
                 </Text>
-              </View>
+              ) : null}
 
-              <View style={styles.pickMetrics}>
-                {pick.rating === null ? null : (
-                  <View style={styles.pickRating}>
-                    <Text style={styles.pickRatingText}>
-                      {pick.rating.toFixed(1)}
-                    </Text>
+              {loadState === 'ready' && !suggestions.length ? (
+                <Text style={styles.picksStatus}>
+                  No places found nearby. Enter an address below.
+                </Text>
+              ) : null}
 
+              {loadState === 'ready' && usingFallbackArea ? (
+                <Text style={styles.picksStatus}>
+                  Showing places near campus because location
+                  access is off.
+                </Text>
+              ) : null}
+
+              {suggestions.map((pick) => (
+                <Pressable
+                  key={pick.id}
+                  onPress={() => handleSelectPick(pick)}
+                  style={({ pressed }) => [
+                    styles.pickCard,
+                    selectedPickId === pick.id &&
+                      styles.pickCardSelected,
+                    pressed && styles.pickCardPressed,
+                  ]}
+                >
+                  <View style={styles.pickIcon}>
                     <Ionicons
-                      name="star"
-                      size={16}
+                      name={pick.icon as never}
+                      size={20}
                       color={colors.white}
                     />
                   </View>
-                )}
 
-                {describeDistance(userCoords, pick) ? (
-                  <Text style={styles.pickDistance}>
-                    {describeDistance(userCoords, pick)}
-                  </Text>
-                ) : null}
-              </View>
+                  <View style={styles.pickDetails}>
+                    <Text
+                      style={styles.pickName}
+                      numberOfLines={2}
+                    >
+                      {pick.name}
+                    </Text>
 
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={colors.white}
-              />
-            </Pressable>
-          ))}
-        </ScrollView>
+                    {describePick(pick) ? (
+                      <Text
+                        style={styles.pickType}
+                        numberOfLines={1}
+                      >
+                        {describePick(pick)}
+                      </Text>
+                    ) : null}
+
+                    <Text
+                      style={styles.pickAddress}
+                      numberOfLines={1}
+                    >
+                      {pick.address}
+                    </Text>
+                  </View>
+
+                  <View style={styles.pickMetrics}>
+                    {pick.rating === null ? null : (
+                      <View style={styles.pickRating}>
+                        <Text style={styles.pickRatingText}>
+                          {pick.rating.toFixed(1)}
+                        </Text>
+
+                        <Ionicons
+                          name="star"
+                          size={16}
+                          color={colors.white}
+                        />
+                      </View>
+                    )}
+
+                    {describeDistance(userCoords, pick) ? (
+                      <Text style={styles.pickDistance}>
+                        {describeDistance(userCoords, pick)}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.white}
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        ) : null}
 
         <View style={styles.bottomArea}>
           <View style={styles.searchField}>
