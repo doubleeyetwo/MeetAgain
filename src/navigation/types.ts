@@ -20,7 +20,7 @@ export type ProfileStackParamList = {
   Settings: undefined;
   PrivacySettings: undefined;
   ChangePassword: undefined;
-  OtherProfile: { uid: string };;
+  OtherProfile: { uid: string };
   // Read-only view of an event that has ended, opened from a profile's past-event tiles.
   PastEvent: { eventId: string };
 };
