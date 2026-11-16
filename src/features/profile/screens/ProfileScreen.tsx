@@ -19,10 +19,11 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CompositeNavigationProp, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { collection, doc, getDoc, getDocs, query, Timestamp, where } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
+import { PastEventsGrid } from '@/features/events/PastEventsGrid';
 import { AppStackParamList, ProfileStackParamList } from '@/navigation/types';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
 import { UserProfile } from '@/types/models';
@@ -33,10 +34,6 @@ type ProfileNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<ProfileStackParamList>,
   NativeStackNavigationProp<AppStackParamList>
 >;
-
-// Memory tiles are 104x93 at a 367pt frame width; keep the ratio and let the row divide the width.
-const TILE_RADIUS = 10;
-const GRID_GAP = 10;
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -59,65 +56,11 @@ function formatBirthday(iso?: string): string {
   return `${month} ${day}${suffix}, ${year}`;
 }
 
-type Memory = { id: string; title: string; photoUrl?: string | null };
-
-type ProfileEvent = {
-  id: string;
-  title: string;
-  startAt: Timestamp;
-  photoURL?: string | null;
-};
-
-function MemoriesGrid({ memories }: { memories: Memory[] }) {
-  if (memories.length === 0) {
-    return (
-      <View style={styles.emptyMemories}>
-        <Ionicons name="images-outline" size={32} color={colors.white} />
-        <Text style={styles.emptyMemoriesText}>Events you attend will show up here.</Text>
-      </View>
-    );
-  }
-
-  // Pad the final row so three tiles per row keep their width.
-  const rows: (Memory | null)[][] = [];
-  for (let index = 0; index < memories.length; index += 3) {
-    const row: (Memory | null)[] = memories.slice(index, index + 3);
-    while (row.length < 3) row.push(null);
-    rows.push(row);
-  }
-
-  return (
-    <View style={styles.grid}>
-      {rows.map((row, rowIndex) => (
-        <View key={rowIndex} style={styles.gridRow}>
-          {row.map((memory, cellIndex) =>
-            memory ? (
-              <View key={memory.id} style={styles.tile}>
-                {memory.photoUrl ? (
-                  <Image source={{ uri: memory.photoUrl }} style={styles.tileImage} resizeMode="cover" />
-                ) : (
-                  <View style={styles.tileFallback}>
-                    <Text style={styles.tileTitle} numberOfLines={3}>{memory.title}</Text>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <View key={`empty-${cellIndex}`} style={styles.tileSpacer} />
-            ),
-          )}
-        </View>
-      ))}
-    </View>
-  );
-}
-
 export function ProfileScreen() {
   const navigation = useNavigation<ProfileNavigation>();
   const { user } = useAuth();
   const friendCount = useFriendCount(user?.uid, user?.uid);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [events, setEvents] = useState<ProfileEvent[]>([]);
-  const [eventsError, setEventsError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [usernameModalVisible, setUsernameModalVisible] = useState(false);
@@ -171,38 +114,6 @@ export function ProfileScreen() {
         active = false;
       };
     }, [user]),
-  );
-
-  // Refresh events when the Profile tab is focused, including after event creation.
-  useFocusEffect(
-    useCallback(() => {
-      if (!user) {
-        setEvents([]);
-        return;
-      }
-      let active = true;
-      const loadEvents = async () => {
-        try {
-          setEventsError('');
-          const eventsQuery = query(
-            collection(db, 'events'),
-            where('participantIds', 'array-contains', user.uid),
-          );
-          const snapshot = await getDocs(eventsQuery);
-          const loadedEvents = snapshot.docs.map((eventDoc) => ({
-            id: eventDoc.id,
-            ...eventDoc.data(),
-          })) as ProfileEvent[];
-          loadedEvents.sort((a, b) => b.startAt.toMillis() - a.startAt.toMillis());
-          if (active) setEvents(loadedEvents);
-        } catch (eventError) {
-          console.error('Failed to load events:', eventError);
-          if (active) setEventsError('Could not load your events.');
-        }
-      };
-      void loadEvents();
-      return () => { active = false; };
-    }, [user?.uid]),
   );
 
   const birthday = formatBirthday(profile?.dateOfBirth);
@@ -390,15 +301,11 @@ export function ProfileScreen() {
                 <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
               ) : null}
 
-              {eventsError ? (
-                <Text accessibilityRole="alert" style={styles.error}>{eventsError}</Text>
-              ) : null}
-              <MemoriesGrid
-                memories={events.map((event) => ({
-                  id: event.id,
-                  title: event.title,
-                  photoUrl: event.photoURL ?? null,
-                }))}
+              <PastEventsGrid
+                profileUid={user?.uid}
+                viewerUid={user?.uid}
+                emptyMessage="You have no past events yet."
+                onOpenEvent={(eventId) => navigation.navigate('PastEvent', { eventId })}
               />
             </>
           )}
@@ -499,40 +406,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   error: { ...text.body, color: '#ff9aa8', textAlign: 'center', marginTop: spacing.md },
-  grid: {
-    width: '100%',
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.lg,
-    gap: GRID_GAP,
-  },
-  gridRow: { flexDirection: 'row', gap: GRID_GAP },
-  tile: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: TILE_RADIUS,
-    overflow: 'hidden',
-    backgroundColor: colors.cardDarker,
-  },
-  tileImage: { width: '100%', height: '100%' },
-  tileFallback: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.sm,
-  },
-  tileTitle: {
-    ...text.body,
-    color: colors.white,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  tileSpacer: { flex: 1 },
-  emptyMemories: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-  },
-  emptyMemoriesText: { ...text.body, color: colors.white, opacity: 0.6, textAlign: 'center' },
   pressed: { opacity: 0.85 },
 });

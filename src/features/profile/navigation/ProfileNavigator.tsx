@@ -7,6 +7,7 @@ import { PrivacySettingsScreen } from '@/features/profile/screens/PrivacySetting
 import { ChangePasswordScreen } from '@/features/profile/screens/ChangePasswordScreen';
 import { OtherProfileScreen } from '@/features/profile/screens/OtherProfileScreen';
 import { FriendsScreen } from '@/features/friends/screens/FriendsScreen';
+import { PastEventScreen } from '@/features/events/screens/PastEventScreen';
 import { ProfileStackParamList } from '@/navigation/types';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -25,6 +26,7 @@ export function ProfileNavigator() {
       <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="OtherProfile" component={OtherProfileScreen} />
+      <Stack.Screen name="PastEvent" component={PastEventScreen} />
     </Stack.Navigator>
   );
 }

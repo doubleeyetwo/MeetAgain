@@ -20,7 +20,9 @@ export type ProfileStackParamList = {
   Settings: undefined;
   PrivacySettings: undefined;
   ChangePassword: undefined;
-  OtherProfile: { uid: string };
+  OtherProfile: { uid: string };;
+  // Read-only view of an event that has ended, opened from a profile's past-event tiles.
+  PastEvent: { eventId: string };
 };
 
 export type MainTabParamList = {
@@ -40,6 +42,8 @@ export type MessagesStackParamList = {
   GroupMembers: { groupId: string };
   GroupSettings: { groupId: string };
   MemberProfile: { uid: string };
+  // A past event opened from a member's profile tiles; Back returns to that profile.
+  PastEvent: { eventId: string };
   Conversation:
     | {
         kind: 'friend';
