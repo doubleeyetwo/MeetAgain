@@ -1,6 +1,10 @@
+
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomTabBarProps, createBottomTabNavigator,} from '@react-navigation/bottom-tabs';
+import {
+  BottomTabBarProps,
+  createBottomTabNavigator,
+} from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { AppStackParamList, MainTabParamList } from './types';
@@ -11,6 +15,9 @@ import { EventCreationNavigator } from '@/features/events/navigation/EventCreati
 import { CalendarViewScreen } from '@/features/calendar/screens/CalendarViewScreen';
 import { ProfileNavigator } from '@/features/profile/navigation/ProfileNavigator';
 import { UpcomingEventScreen } from '@/features/events/screens/UpcomingEventScreen';
+import { EditEventDetailsScreen } from '@/features/events/screens/CreateEventScreen';
+import { EditEventLocationScreen } from '@/features/events/screens/PickLocationScreen';
+import { EditEventTimeScreen } from '@/features/events/screens/PickTimeScreen';
 
 import { colors } from '@/theme';
 
@@ -21,14 +28,17 @@ function BottomTabBar({
   state,
   navigation,
 }: BottomTabBarProps) {
-  // Find the selected tab, then inspect the screen inside its nested navigator.
-const activeTab = state.routes[state.index];
-const activeScreen = getFocusedRouteNameFromRoute(activeTab);
+  const activeTab = state.routes[state.index];
+  const activeScreen = getFocusedRouteNameFromRoute(activeTab);
 
-// Returning null removes the bar and lets the conversation use that space.
-if (activeTab.name === 'Messages' && activeScreen === 'Conversation') {
-  return null;
-}
+  // Hide the bottom bar inside conversations.
+  if (
+    activeTab.name === 'Messages' &&
+    activeScreen === 'Conversation'
+  ) {
+    return null;
+  }
+
   const renderTab = (
     routeName: keyof MainTabParamList,
     iconName: keyof typeof Ionicons.glyphMap
@@ -150,9 +160,10 @@ function MainTabs() {
         component={MessagesNavigator}
       />
 
-      <Tabs.Screen 
-      name="CreateEvent" 
-      component={EventCreationNavigator} />
+      <Tabs.Screen
+        name="CreateEvent"
+        component={EventCreationNavigator}
+      />
 
       <Tabs.Screen
         name="Calendar"
@@ -161,7 +172,6 @@ function MainTabs() {
 
       <Tabs.Screen
         name="Profile"
-        // Profile screens live in their own stack so profile actions stay within this tab.
         component={ProfileNavigator}
       />
     </Tabs.Navigator>
@@ -187,6 +197,22 @@ export function AppNavigator() {
         name="EventDetails"
         component={UpcomingEventScreen}
       />
+
+      <Stack.Screen
+        name="EditEventDetails"
+        component={EditEventDetailsScreen}
+      />
+
+      <Stack.Screen
+        name="EditEventLocation"
+        component={EditEventLocationScreen}
+      />
+
+      <Stack.Screen
+        name="EditEventTime"
+        component={EditEventTimeScreen}
+      />
+
     </Stack.Navigator>
   );
 }

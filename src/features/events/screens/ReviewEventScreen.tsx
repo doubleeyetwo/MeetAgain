@@ -2,6 +2,7 @@ import { MAX_PLANNING_ENTRIES, validItemPrice, validatePlanning } from '@/featur
 import { eventAlert } from '@/features/events/eventAlert';
 
 import { useEffect, useRef, useState } from 'react';
+import { ContinueButton } from '@/components/ContinueButton';
 import {
   Image,
   KeyboardAvoidingView,
@@ -1075,23 +1076,13 @@ if (directConversationId) {
       </ScrollView>
 
       {/* CONFIRM EVENT */}
-
-      <Pressable
-        style={styles.confirmButton}
-        onPress={handleConfirmEvent}
-        disabled={savingEvent}
-      >
-        <LinearGradient
-          colors={gradients.purpleAccent}
-          start={gradientDirection.horizontal.start}
-          end={gradientDirection.horizontal.end}
-          style={styles.confirmGradient}
-        >
-          <Text style={styles.confirmText}>
-            Confirm Event
-          </Text>
-        </LinearGradient>
-      </Pressable>
+      <View style={styles.confirmContainer}>
+        <ContinueButton
+          title={savingEvent ? 'Creating Event...' : 'Confirm Event'}
+          onPress={handleConfirmEvent}
+          disabled={savingEvent}
+        />
+      </View>
         
       {/* EDIT ITEM PRICE MODAL */}
 
@@ -1759,9 +1750,9 @@ const styles = StyleSheet.create({
   // CONFIRM BUTTON
 
   confirmContainer: {
-    paddingHorizontal: 1,
+    paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 12,
+    paddingBottom: 40,
     backgroundColor: colors.bgEnd,
   },
 

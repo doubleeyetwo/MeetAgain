@@ -789,26 +789,71 @@ service cloud.firestore {
           && changes.hasAny(['items', 'tasks']);
       }
 
-      function isEventAdmin() {
-        return (resource.data.get('groupId', null) == null
-            && resource.data.creatorId == request.auth.uid)
-          || (resource.data.get('groupId', null) is string
-            && exists(/databases/$(database)/documents/groups/$(resource.data.groupId))
-            && get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.get('deleting', false) == false
-            && request.auth.uid in get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.adminIds);
+      // Event ownership, not group administration, controls full editing.
+      function isEventCreator() {
+        return resource.data.creatorId == request.auth.uid;
       }
 
-      // Admins can edit entire planning lists in one atomic Save.
-      // Entry-level checks are performed by eventEditingService.ts.
-      // IMPORTANT: rules do not independently validate entry shapes here.
-      function validAdminPlanningEdit() {
-        return request.resource.data.get('items', []) is list
-          && request.resource.data.get('tasks', []) is list
-          && request.resource.data.get('items', []).size() <= 20
-          && request.resource.data.get('tasks', []).size() <= 20;
+      function eventIsUpcoming() {
+        return resource.data.endAt is timestamp
+          && request.time < resource.data.endAt;
       }
 
-      // A member can only change their own assigneeId (null <-> own UID).
+      // Validate each creator-edited entry, including assignments and item prices.
+      // The index guard allows shorter lists without accessing missing entries.
+      function validCreatorEntryAt(entries, index, isItem) {
+        return entries.size() <= index || (
+          entries[index] is map
+          && entries[index].keys().hasAll(['id', 'name', 'completed', 'assigneeId'])
+          && (isItem
+            ? entries[index].keys().hasOnly(['id', 'name', 'completed', 'assigneeId', 'price'])
+            : entries[index].keys().hasOnly(['id', 'name', 'completed', 'assigneeId']))
+          && entries[index].id is int
+          && entries[index].name is string
+          && entries[index].name.size() > 0
+          && entries[index].name.size() <= 150
+          && entries[index].completed is bool
+          && (entries[index].assigneeId == null
+            || entries[index].assigneeId in resource.data.participantIds)
+          && (!isItem || (entries[index].keys().hasAll(['price'])
+            && entries[index].price is number
+            && entries[index].price >= 0
+            && entries[index].price <= 1000000))
+        );
+      }
+
+      function validCreatorEntries(entries, isItem) {
+        return entries is list && entries.size() <= 20
+          && (entries.size() == 0 || (
+            validCreatorEntryAt(entries, 0, isItem) &&
+            validCreatorEntryAt(entries, 1, isItem) &&
+            validCreatorEntryAt(entries, 2, isItem) &&
+            validCreatorEntryAt(entries, 3, isItem) &&
+            validCreatorEntryAt(entries, 4, isItem) &&
+            validCreatorEntryAt(entries, 5, isItem) &&
+            validCreatorEntryAt(entries, 6, isItem) &&
+            validCreatorEntryAt(entries, 7, isItem) &&
+            validCreatorEntryAt(entries, 8, isItem) &&
+            validCreatorEntryAt(entries, 9, isItem) &&
+            validCreatorEntryAt(entries, 10, isItem) &&
+            validCreatorEntryAt(entries, 11, isItem) &&
+            validCreatorEntryAt(entries, 12, isItem) &&
+            validCreatorEntryAt(entries, 13, isItem) &&
+            validCreatorEntryAt(entries, 14, isItem) &&
+            validCreatorEntryAt(entries, 15, isItem) &&
+            validCreatorEntryAt(entries, 16, isItem) &&
+            validCreatorEntryAt(entries, 17, isItem) &&
+            validCreatorEntryAt(entries, 18, isItem) &&
+            validCreatorEntryAt(entries, 19, isItem)
+          ));
+      }
+
+      function validCreatorPlanningEdit() {
+        return validCreatorEntries(request.resource.data.get('items', []), true)
+          && validCreatorEntries(request.resource.data.get('tasks', []), false);
+      }
+
+      // A member can change completion and their own assignment only.
       // Unchanged entries short-circuit to reduce rule evaluations.
       function validSelfAssignmentAt(before, after, index) {
         return before.size() <= index
@@ -818,8 +863,11 @@ service cloud.firestore {
             && before[index].keys().hasAll(['id', 'assigneeId'])
             && after[index].keys().hasAll(['id', 'assigneeId'])
             && before[index].id == after[index].id
-            && after[index].diff(before[index]).affectedKeys().hasOnly(['assigneeId'])
-            && ((before[index].assigneeId == null && after[index].assigneeId == request.auth.uid)
+            && after[index].diff(before[index]).affectedKeys().hasOnly(['assigneeId', 'completed'])
+            && before[index].completed is bool
+            && after[index].completed is bool
+            && (before[index].assigneeId == after[index].assigneeId
+              || (before[index].assigneeId == null && after[index].assigneeId == request.auth.uid)
               || (before[index].assigneeId == request.auth.uid && after[index].assigneeId == null)));
       }
 
@@ -872,12 +920,67 @@ service cloud.firestore {
           && after.get(uid, '') in ['yes', 'no'];
       }
 
-      allow update: if isParticipant()
-        && (validRSVPUpdate()
-          || (planningFieldsOnly()
-            && ((isEventAdmin() && validAdminPlanningEdit())
-              || validParticipantPlanningEdit())));
-      allow delete: if isDeletingGroupOwner();
+      // Details edits cannot alter invitations, ownership, RSVP, or planning.
+      function detailsFieldsOnly() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return request.resource.data.updatedAt == request.time
+          && changed.hasOnly([
+            'title', 'category', 'description', 'photoURL',
+            'location', 'startAt', 'endAt', 'updatedAt'
+          ])
+          && changed.hasAny([
+            'title', 'category', 'description', 'photoURL',
+            'location', 'startAt', 'endAt'
+          ])
+          && (isEventCreator() || !changed.hasAny(['location', 'startAt', 'endAt']));
+      }
+
+      function validDetailsEdit() {
+        let data = request.resource.data;
+        return detailsFieldsOnly()
+          && data.title is string
+          && data.title.size() > 0
+          && data.title.size() <= 150
+          && (!data.keys().hasAny(['category'])
+            || (data.category is string && data.category.size() <= 80))
+          && (!data.keys().hasAny(['description'])
+            || (data.description is string && data.description.size() <= 2000))
+          && (!data.keys().hasAny(['photoURL'])
+            || data.photoURL == null
+            || (data.photoURL is string && data.photoURL.size() <= 200023))
+          && (!data.keys().hasAny(['location'])
+            || (data.location is string && data.location.size() <= 2000)
+            || (data.location is map && data.location.get('name', null) is string
+              && data.location.name.size() <= 2000
+              && data.location.keys().hasOnly(['name', 'address'])
+              && (!data.location.keys().hasAny(['address'])
+                || (data.location.address is string && data.location.address.size() <= 2000))))
+          && data.startAt is timestamp
+          && data.endAt is timestamp
+          && data.endAt > data.startAt;
+      }
+
+      // Check that this is an existing event before accessing resource.data.
+      // Dispatch by changed fields before evaluating expensive list checks.
+      function eventChangedFields() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
+
+      allow update: if resource != null
+        && isParticipant()
+        && (
+          (eventChangedFields().hasOnly(['rsvps']) && validRSVPUpdate())
+          || (eventIsUpcoming() && (
+            (eventChangedFields().hasAny(['title', 'category', 'description', 'photoURL', 'location', 'startAt', 'endAt'])
+              && validDetailsEdit())
+            || (eventChangedFields().hasAny(['items', 'tasks'])
+              && planningFieldsOnly()
+              && (isEventCreator()
+                ? validCreatorPlanningEdit()
+                : validParticipantPlanningEdit()))
+          ))
+        );
+      allow delete: if isDeletingGroupOwner() || (signedIn() && resource.data.creatorId == request.auth.uid);
     }
     match /calendarImports/{userId} {
       function sharingWithFriend() {

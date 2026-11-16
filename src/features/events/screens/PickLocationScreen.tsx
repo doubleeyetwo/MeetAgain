@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,10 +12,22 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
-import { colors, fontFamily, radius, spacing, text } from '@/theme';
+import {
+  colors,
+  fontFamily,
+  radius,
+  spacing,
+  text,
+  gradients,
+  gradientDirection,
+} from '@/theme';
+
+import { auth } from '@/config/firebase';
+import { saveEventDetails } from '@/features/events/eventEditingService';
 
 import {
   getDeviceLocation,
@@ -29,11 +42,21 @@ import {
   type SuggestedPlace,
 } from '@/features/events/placesService';
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import type { AppStackParamList } from '@/navigation/types';
 
-type Props = NativeStackScreenProps<
+type CreationProps = NativeStackScreenProps<
   EventCreationStackParamList,
   'PickLocation'
 >;
+
+type EditingProps = NativeStackScreenProps<
+  AppStackParamList,
+  'EditEventLocation'
+>;
+
+type ScreenProps =
+  | { mode: 'create'; screen: CreationProps }
+  | { mode: 'edit'; screen: EditingProps };
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -68,15 +91,25 @@ function describeDistance(
 const placeSuggestionsEnabled =
   process.env.EXPO_PUBLIC_ENABLE_PLACE_SUGGESTIONS !== 'false';
 
-export function PickLocationScreen({
-  navigation,
-  route,
-}: Props) {
+export function PickLocationScreen(props: CreationProps) {
+  return <LocationForm mode="create" screen={props} />;
+}
+
+export function EditEventLocationScreen(props: EditingProps) {
+  return <LocationForm mode="edit" screen={props} />;
+}
+
+function LocationForm(props: ScreenProps) {
+  const params = props.screen.route.params;
+  const isEditing = props.mode === 'edit';
+
   const [address, setAddress] = useState(
-    route.params.location ?? ''
+    params.location ?? ''
   );
+
   const [selectedPickId, setSelectedPickId] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestedPlace[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [usingFallbackArea, setUsingFallbackArea] = useState(false);
@@ -86,7 +119,8 @@ export function PickLocationScreen({
   // planner's, which is worse than showing none.
   const [userCoords, setUserCoords] = useState<DeviceCoords | null>(null);
 
-  const { category, presetId } = route.params;
+  const { category } = params;
+  const presetId = props.mode === 'create' ? props.screen.route.params.presetId : undefined;
 
   useEffect(() => {
     if (!placeSuggestionsEnabled) return;
@@ -135,6 +169,7 @@ export function PickLocationScreen({
   }, [category, presetId]);
 
   const handleSelectPick = (pick: SuggestedPlace) => {
+    if (saving) return;
     setAddress(pick.address || pick.name);
     setSelectedPickId(pick.id);
     setError('');
@@ -143,16 +178,56 @@ export function PickLocationScreen({
   const handleChangeAddress = (value: string) => {
     setAddress(value);
     setSelectedPickId('');
+
     if (error) setError('');
   };
 
-  const handleConfirmLocation = () => {
+  const handleConfirmLocation = async () => {
     const trimmed = address.trim();
 
     if (!trimmed) {
       setError('Enter an address.');
       return;
     }
+
+    if (props.mode === 'edit') {
+      if (saving) return;
+
+      const actorId = auth.currentUser?.uid;
+
+      if (!actorId) {
+        Alert.alert(
+          'Sign In Required',
+          'Please sign in before editing this event.'
+        );
+        return;
+      }
+
+      setSaving(true);
+
+      try {
+        await saveEventDetails(
+          props.screen.route.params.editingEventId,
+          actorId,
+          { location: trimmed }
+        );
+
+        props.screen.navigation.goBack();
+      } catch (error) {
+        Alert.alert(
+          'Unable to Save',
+          error instanceof Error
+            ? error.message
+            : 'Please try again.'
+        );
+      } finally {
+        setSaving(false);
+      }
+
+      return;
+    }
+
+    const { navigation, route } = props.screen;
 
     const { editingFromReview, ...details } = route.params;
     const params = { ...details, location: trimmed };
@@ -163,16 +238,26 @@ export function PickLocationScreen({
     navigation.navigate('ReviewEvent', params);
   };
 
-
   return (
-    <KeyboardAvoidingView
+    <LinearGradient
+      colors={gradients.background}
+      {...gradientDirection.vertical}
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenHeader
-        title="Choose Location"
-        onBack={() => navigation.goBack()}
-      />
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={
+          Platform.OS === 'ios' ? 'padding' : undefined
+        }
+      >
+        <ScreenHeader
+          title={
+            isEditing
+              ? 'Edit Event Location'
+              : 'Choose Location'
+          }
+          onBack={() => props.screen.navigation.goBack()}
+        />
 
       <View style={styles.content}>
         {placeSuggestionsEnabled ? (
@@ -288,45 +373,53 @@ export function PickLocationScreen({
             </ScrollView>
           </>
         ) : null}
+          <View style={styles.bottomArea}>
+            <View style={styles.searchField}>
+              <Ionicons name="location-outline" size={16} color={colors.white} />
 
-        <View style={styles.bottomArea}>
-          <View style={styles.searchField}>
-            <Ionicons
-              name="location-outline"
-              size={16}
-              color={colors.white}
-            />
+              <TextInput
+                value={address}
+                onChangeText={handleChangeAddress}
+                placeholder="Enter Address"
+                placeholderTextColor={colors.white}
+                style={styles.searchInput}
+                autoCapitalize="words"
+                returnKeyType="done"
+                editable={!saving}
+                onSubmitEditing={() =>
+                  void handleConfirmLocation()
+                }
+              />
+            </View>
 
-            <TextInput
-              value={address}
-              onChangeText={handleChangeAddress}
-              placeholder="Enter Address"
-              placeholderTextColor={colors.white}
-              style={styles.searchInput}
-              autoCapitalize="words"
-              returnKeyType="done"
-              onSubmitEditing={handleConfirmLocation}
+            {error ? (
+              <Text style={styles.errorText}>
+                {error}
+              </Text>
+            ) : null}
+
+            <ContinueButton
+              title={
+                saving
+                  ? 'Saving...'
+                  : isEditing
+                    ? 'Save Changes'
+                    : 'Confirm Location'
+              }
+              onPress={() =>
+                void handleConfirmLocation()
+              }
             />
           </View>
-
-          {error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : null}
-
-          <ContinueButton
-            title="Confirm Location"
-            onPress={handleConfirmLocation}
-          />
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
 
   content: {
@@ -431,7 +524,7 @@ const styles = StyleSheet.create({
 
   bottomArea: {
     marginTop: 'auto',
-    paddingBottom: spacing.lg,
+    paddingBottom: 40,
     gap: spacing.md,
   },
 

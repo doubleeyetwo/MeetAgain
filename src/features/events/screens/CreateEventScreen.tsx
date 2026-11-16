@@ -3,6 +3,7 @@ import { eventAlert } from '@/features/events/eventAlert';
 import { useState } from 'react';
 import {
   Image,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,10 +11,11 @@ import {
   Text,
   TextInput,
   View,
-  ScrollView
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
@@ -21,17 +23,35 @@ import {
   pickPhotoFromLibrary,
   takeProfilePhoto,
 } from '@/features/auth/profilePhoto';
-import { colors, fontFamily, radius, spacing } from '@/theme';
+import {
+  colors,
+  fontFamily,
+  radius,
+  spacing,
+  gradients,
+  gradientDirection,
+} from '@/theme';
 import { EditPhoto } from '@/components/EditPhoto';
-
-
 import { getTemplate } from '@/features/events/eventTemplates';
-import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import { saveEventDetails } from '@/features/events/eventEditingService';
+import { auth } from '@/config/firebase';
 
-type Props = NativeStackScreenProps<
+import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import type { AppStackParamList } from '@/navigation/types';
+
+type CreationProps = NativeStackScreenProps<
   EventCreationStackParamList,
   'EventDetails'
 >;
+
+type EditingProps = NativeStackScreenProps<
+  AppStackParamList,
+  'EditEventDetails'
+>;
+
+type ScreenProps =
+  | { mode: 'create'; screen: CreationProps }
+  | { mode: 'edit'; screen: EditingProps };
 
 const EVENT_CATEGORIES = [
   'Food & Dining',
@@ -42,35 +62,50 @@ const EVENT_CATEGORIES = [
   'Other',
 ];
 
-export function CreateEventScreen({ navigation, route }: Props) {
+export function CreateEventScreen(props: CreationProps) {
+  return <EventDetailsForm mode="create" screen={props} />;
+}
+
+export function EditEventDetailsScreen(props: EditingProps) {
+  return <EventDetailsForm mode="edit" screen={props} />;
+}
+
+function EventDetailsForm(props: ScreenProps) {
+  const isEditing = props.mode === 'edit';
+  const params = props.screen.route.params;
+
   const [eventName, setEventName] = useState(
-  route.params?.eventName ?? ''
-);
+    params?.eventName ?? ''
+  );
+
   const [category, setCategory] = useState(() => {
-  const initialCategory = route.params?.category ?? '';
+    const initialCategory = params?.category ?? '';
 
-  if (
-    initialCategory &&
-    !EVENT_CATEGORIES.includes(initialCategory)
-  ) {
-    return 'Other';
-  }
+    if (
+      initialCategory &&
+      !EVENT_CATEGORIES.includes(initialCategory)
+    ) {
+      return 'Other';
+    }
 
-  return initialCategory;
-});
+    return initialCategory;
+  });
 
   const [customCategory, setCustomCategory] = useState(
-  route.params?.category &&
-    !EVENT_CATEGORIES.includes(route.params.category)
-    ? route.params.category
-    : ''
-);
+    params?.category &&
+      !EVENT_CATEGORIES.includes(params.category)
+      ? params.category
+      : ''
+  );
+
   const [showCategories, setShowCategories] = useState(false);
 
   const [eventPhoto, setEventPhoto] = useState<string | null>(
-  route.params?.eventPhoto ?? null
-);
+    params?.eventPhoto ?? null
+  );
+
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const resolvedCategory =
     category === 'Other'
@@ -144,162 +179,249 @@ export function CreateEventScreen({ navigation, route }: Props) {
     );
   };
 
-  const handleConfirmDetails = () => {
-  const updatedDetails = {
-    eventName: eventName.trim(),
-    category: resolvedCategory,
-    presetId: route.params?.presetId,
-    eventPhoto,
-  };
+  const handleConfirmDetails = async () => {
+    const trimmedName = eventName.trim();
 
-  if (route.params?.editingFromReview) {
-    if (
-      !route.params.startAt ||
-      !route.params.endAt
-    ) {
-      eventAlert('Error', 'Event date and time are missing.');
+    if (!trimmedName) {
+      Alert.alert('Missing Details', 'Enter an event name.');
       return;
     }
 
-    navigation.navigate({
-      name: 'ReviewEvent',
-      params: {
-        ...route.params,
-        ...updatedDetails,
-        startAt: route.params.startAt,
-        endAt: route.params.endAt,
-        selectedMemberIds:
-          route.params.selectedMemberIds ?? [],
-      },
-      merge: true,
-      pop: true,
-    });
+    if (!resolvedCategory) {
+      Alert.alert(
+        'Missing Details',
+        'Select or enter an event category.'
+      );
+      return;
+    }
 
-    return;
-  }
+    if (props.mode === 'edit') {
+      const actorId = auth.currentUser?.uid;
 
-  navigation.navigate('SelectMembers', updatedDetails);
-};
+      if (!actorId) {
+        Alert.alert(
+          'Sign In Required',
+          'Please sign in before editing this event.'
+        );
+        return;
+      }
+
+      if (saving) return;
+
+      setSaving(true);
+
+      try {
+        await saveEventDetails(
+          props.screen.route.params.editingEventId,
+          actorId,
+          {
+            title: trimmedName,
+            category: resolvedCategory,
+          }
+        );
+
+        props.screen.navigation.goBack();
+      } catch (error) {
+        Alert.alert(
+          'Unable to Save',
+          error instanceof Error
+            ? error.message
+            : 'Please try again.'
+        );
+      } finally {
+        setSaving(false);
+      }
+
+      return;
+    }
+
+    const { navigation, route } = props.screen;
+
+    const updatedDetails = {
+      eventName: trimmedName,
+      category: resolvedCategory,
+      presetId: route.params?.presetId,
+      eventPhoto,
+    };
+
+    if (route.params?.editingFromReview) {
+      if (
+        !route.params.startAt ||
+        !route.params.endAt
+      ) {
+        Alert.alert(
+          'Error',
+          'Event date and time are missing.'
+        );
+        return;
+      }
+
+      navigation.navigate({
+        name: 'ReviewEvent',
+        params: {
+          ...route.params,
+          ...updatedDetails,
+          startAt: route.params.startAt,
+          endAt: route.params.endAt,
+          selectedMemberIds:
+            route.params.selectedMemberIds ?? [],
+        },
+        merge: true,
+        pop: true,
+      });
+
+      return;
+    }
+
+    navigation.navigate('SelectMembers', updatedDetails);
+  };
+
+  const screenTitle =
+    props.mode === 'edit'
+      ? 'Edit Event Details'
+      : getTemplate(
+          props.screen.route.params?.presetId
+        )?.name ?? 'Add Custom Event';
 
   return (
-    <KeyboardAvoidingView
+    <LinearGradient
+      colors={gradients.background}
+      {...gradientDirection.vertical}
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenHeader
-        title={
-          getTemplate(route.params?.presetId)?.name ??
-          'Add Custom Event'
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={
+          Platform.OS === 'ios' ? 'padding' : undefined
         }
-        onBack={() => navigation.goBack()}
-      />
+      >
+        <ScreenHeader
+          title={screenTitle}
+          onBack={() => props.screen.navigation.goBack()}
+        />
 
-      <View style={styles.content}>
-  <View style={styles.photoArea}>
-    <EditPhoto
-      photoUri={eventPhoto}
-      onPress={openPhotoOptions}
-      size={120}
-      disabled={photoLoading}
-    />
+        <View style={styles.content}>
+          {!isEditing && (
+            <View style={styles.photoArea}>
+              <EditPhoto
+                photoUri={eventPhoto}
+                onPress={openPhotoOptions}
+                size={120}
+                disabled={photoLoading}
+              />
 
-    <Text style={styles.photoText}>
-      {photoLoading
-        ? 'Loading Photo...'
-        : eventPhoto
-          ? 'Change Photo'
-          : 'Add Photo'}
-    </Text>
-</View>
-
-        <View style={styles.form}>
-          <TextInput
-            value={eventName}
-            onChangeText={setEventName}
-            placeholder="Event Name"
-            placeholderTextColor={colors.white}
-            style={styles.input}
-          />
-
-          <View style={styles.categoryWrapper}>
-            <Pressable
-              style={styles.categoryField}
-              onPress={() =>
-                setShowCategories((current) => !current)
-              }
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  !category && styles.placeholderText,
-                ]}
-              >
-                {category || 'Event Category'}
+              <Text style={styles.photoText}>
+                {photoLoading
+                  ? 'Loading Photo...'
+                  : eventPhoto
+                    ? 'Change Photo'
+                    : 'Add Photo'}
               </Text>
+            </View>
+          )}
 
-              <Ionicons
-                name={
-                  showCategories
-                    ? 'chevron-up'
-                    : 'chevron-down'
+          <View
+            style={[
+              styles.form,
+              isEditing && styles.editingForm,
+            ]}
+          >
+            <TextInput
+              value={eventName}
+              onChangeText={setEventName}
+              placeholder="Event Name"
+              placeholderTextColor={colors.white}
+              style={styles.input}
+              editable={!saving}
+            />
+
+            <View style={styles.categoryWrapper}>
+              <Pressable
+                style={styles.categoryField}
+                disabled={saving}
+                onPress={() =>
+                  setShowCategories((current) => !current)
                 }
-                size={20}
-                color={colors.white}
-              />
-            </Pressable>
-
-            {showCategories && (
-              <ScrollView
-                style={styles.dropdown}
-                nestedScrollEnabled
-                keyboardShouldPersistTaps="always"
-                showsVerticalScrollIndicator={false}
               >
-                {EVENT_CATEGORIES.map((item) => (
-                  <Pressable
-                    key={item}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setCategory(item);
-                      setShowCategories(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownText}>
-                      {item}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            )}
+                <Text
+                  style={[
+                    styles.categoryText,
+                    !category && styles.placeholderText,
+                  ]}
+                >
+                  {category || 'Event Category'}
+                </Text>
 
-            {category === 'Other' && (
-              <TextInput
-                value={customCategory}
-                onChangeText={setCustomCategory}
-                placeholder="Enter Custom Category"
-                placeholderTextColor={colors.white}
-                style={styles.customCategoryInput}
-                autoCapitalize="words"
-              />
-            )}
+                <Ionicons
+                  name={
+                    showCategories
+                      ? 'chevron-up'
+                      : 'chevron-down'
+                  }
+                  size={20}
+                  color={colors.white}
+                />
+              </Pressable>
+
+              {showCategories && (
+                <ScrollView
+                  style={styles.dropdown}
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="always"
+                  showsVerticalScrollIndicator={false}
+                >
+                  {EVENT_CATEGORIES.map((item) => (
+                    <Pressable
+                      key={item}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setCategory(item);
+                        setShowCategories(false);
+                      }}
+                    >
+                      <Text style={styles.dropdownText}>
+                        {item}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+
+              {category === 'Other' && (
+                <TextInput
+                  value={customCategory}
+                  onChangeText={setCustomCategory}
+                  placeholder="Enter Custom Category"
+                  placeholderTextColor={colors.white}
+                  style={styles.customCategoryInput}
+                  autoCapitalize="words"
+                  editable={!saving}
+                />
+              )}
+            </View>
+          </View>
+
+          <View style={styles.continueContainer}>
+            <ContinueButton
+              title={
+                saving
+                  ? 'Saving...'
+                  : isEditing
+                    ? 'Save Changes'
+                    : 'Confirm Details'
+              }
+              onPress={() => void handleConfirmDetails()}
+            />
           </View>
         </View>
-
-        <View style={styles.continueContainer}>
-          <ContinueButton
-            title="Confirm Details"
-            onPress={handleConfirmDetails}
-          />
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
 
   content: {
@@ -313,21 +435,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  photoCircle: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: colors.cardDarker,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-
-  eventPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-
   photoText: {
     marginTop: spacing.sm,
     fontFamily: fontFamily.regular,
@@ -338,6 +445,10 @@ const styles = StyleSheet.create({
   form: {
     alignItems: 'center',
     gap: 27,
+  },
+
+  editingForm: {
+    paddingTop: 55,
   },
 
   input: {
@@ -420,6 +531,6 @@ const styles = StyleSheet.create({
 
   continueContainer: {
     marginTop: 'auto',
-    paddingBottom: spacing.lg,
+    paddingBottom: 40,
   },
 });

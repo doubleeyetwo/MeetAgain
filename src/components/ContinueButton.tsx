@@ -1,6 +1,13 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { colors, fontFamily, radius, text } from '@/theme';
+import { Pressable, StyleSheet, Text } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import {
+  colors,
+  fontFamily,
+  gradients,
+  gradientDirection,
+} from '@/theme';
 
 type ContinueButtonProps = {
   title: string;
@@ -14,39 +21,50 @@ export function ContinueButton({
   disabled = false,
 }: ContinueButtonProps) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.button,
-        pressed && !disabled && styles.pressed,
-        disabled && styles.disabled,
-      ]}
+    <LinearGradient
+      colors={gradients.purpleAccent}
+      {...gradientDirection.horizontal}
+      style={styles.gradient}
     >
-      <Text style={styles.label}>{title}</Text>
-    </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityState={{ disabled }}
+        onPress={onPress}
+        disabled={disabled}
+        style={({ pressed }) => [
+          styles.button,
+          disabled && styles.disabled,
+          pressed && !disabled && styles.pressed,
+        ]}
+      >
+        <Text style={styles.label}>{title}</Text>
+      </Pressable>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  button: {
+  gradient: {
     width: '100%',
-    height: 57,
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryAccent,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+
+  button: {
+    minHeight: 62,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   label: {
-    ...text.body,
-    fontFamily: 'Moderustic_600SemiBold',
     color: colors.white,
+    fontFamily: fontFamily.semibold,
     fontSize: 16,
   },
 
   pressed: {
-    opacity: 0.85,
+    opacity: 0.75,
   },
 
   disabled: {

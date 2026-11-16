@@ -3,8 +3,10 @@ import { eventAlert } from '@/features/events/eventAlert';
 
 import { useEffect, useState, useRef } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   Image,
+  Platform,
   Modal,
   Pressable,
   ScrollView,
@@ -15,9 +17,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { doc, getDoc, onSnapshot, type Timestamp } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, onSnapshot, type Timestamp } from 'firebase/firestore';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { saveEventPlanningDraft } from '@/features/events/eventEditingService';
+import { saveEventPlanningDraft, saveEventDetails } from '@/features/events/eventEditingService';
+import { pickPhotoFromLibrary, takeProfilePhoto } from '@/features/auth/profilePhoto';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { db } from '@/config/firebase';
@@ -81,7 +84,6 @@ export function UpcomingEventScreen({ navigation, route }: Props) {
   const [error, setError] = useState(false);
   const [invalidPlanning, setInvalidPlanning] = useState(false);
   const [attendeeNames, setAttendeeNames] = useState<Record<string, string>>({});
-  const [groupAdminIds, setGroupAdminIds] = useState<string[]>([]);
   const [assignmentEntry, setAssignmentEntry] = useState<{type: 'item' | 'task'; id: number} | null>(null);
   const [deleteEntry, setDeleteEntry] = useState<{type: 'item' | 'task'; id: number} | null>(null);
   const [pressedEntry, setPressedEntry] = useState<{type: 'item' | 'task'; id: number} | null>(null);
@@ -92,16 +94,40 @@ export function UpcomingEventScreen({ navigation, route }: Props) {
   const [addType, setAddType] = useState<'item' | 'task' | null>(null);
 const [newName, setNewName] = useState('');
 const [newPrice, setNewPrice] = useState('');
-const [saving, setSaving] = useState(false);
+ const [saving, setSaving] = useState(false);
+ const [savingDetails, setSavingDetails] = useState(false);
+ const [photoLoading, setPhotoLoading] = useState(false);
+ const [descriptionEditorOpen, setDescriptionEditorOpen] = useState(false);
+ const [descriptionDraft, setDescriptionDraft] = useState('');
 const [saveDiagnostic, setSaveDiagnostic] = useState<string | null>(null);
+const [deleteEventConfirmOpen, setDeleteEventConfirmOpen] = useState(false);
+const [deletingEvent, setDeletingEvent] = useState(false);
+
+const confirmDeleteEvent = async () => {
+  if (!user || !event || event.creatorId !== user.uid || deletingEvent) return;
+  setDeletingEvent(true);
+  try {
+    await deleteDoc(doc(db, 'events', eventId));
+    setDeleteEventConfirmOpen(false);
+    navigation.goBack();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unable to delete event.';
+    console.error('[UpcomingEvent] Delete failed', err);
+    if (Platform.OS === 'web') window.alert(message);
+    else Alert.alert('Unable to Delete', message);
+  } finally {
+    setDeletingEvent(false);
+  }
+};
 
 const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
 const [editedPrice, setEditedPrice] = useState('');
 
 const isPast = !!event && event.endAt.toDate().getTime() <= Date.now();
-const isAdmin = !!user && (event?.groupId ? groupAdminIds.includes(user.uid) : event?.creatorId === user.uid);
+const isCreator = !!user && event?.creatorId === user.uid;
 const canEdit = !!user && !invalidPlanning && !isPast && (event?.participantIds ?? []).includes(user.uid);
-const canManage = canEdit && isAdmin;
+const canManage = canEdit && isCreator;
+ const canEditDetails = canEdit && !saving && !savingDetails && !dirty;
 const markChanged = () => { dirtyRef.current = true; setDirty(true); setSaveDiagnostic(null); };
 const updateDraft = (type: 'item' | 'task', update: (entries: any[]) => any[]) => {
   if (type === 'item') setDraftItems(previous => update(previous));
@@ -132,8 +158,8 @@ const handleAddEntry = () => {
 };
 
 const handleToggle = (type: 'item' | 'task', id: number) => {
-  if (!canManage || saving) return;
-  updateDraft(type, entries => entries.map(entry => entry.id === id ? {...entry, completed: !entry.completed} : entry));
+  if (!canEdit || saving) return;
+   updateDraft(type, entries => entries.map(entry => entry.id === id ? {...entry, completed: !entry.completed} : entry));
 };
 
 const openPriceEditor = (item: EventItem) => {
@@ -244,13 +270,68 @@ const handleSave = async () => {
     };
   }, [event?.participantIds, user?.uid, user?.displayName]);
 
-  useEffect(() => {
-    if (!event?.groupId) { setGroupAdminIds([]); return; }
-    return onSnapshot(doc(db, 'groups', event.groupId), snapshot => {
-      const ids = snapshot.data()?.adminIds;
-      setGroupAdminIds(Array.isArray(ids) ? ids : []);
-    }, () => setGroupAdminIds([]));
-  }, [event?.groupId]);
+  // Detail edits are saved independently from item/task drafts. Avoid mixing
+  // the two while an unsaved planning draft is present.
+  const editParams = event ? {
+    editingEventId: eventId,
+    eventName: event.title ?? '',
+    category: event.category ?? '',
+    eventPhoto: event.photoURL ?? null,
+    location: event.location ?? '',
+    startAt: event.startAt.toDate().toISOString(),
+    endAt: event.endAt.toDate().toISOString(),
+  } : null;
+
+  const openEditRoute = (target: 'EditEventDetails' | 'EditEventLocation' | 'EditEventTime') => {
+    if (!canEditDetails || !editParams) return;
+    if (target !== 'EditEventDetails' && !isCreator) return;
+    if (target === 'EditEventDetails') navigation.navigate('EditEventDetails', editParams);
+    else if (target === 'EditEventLocation') navigation.navigate('EditEventLocation', editParams);
+    else navigation.navigate('EditEventTime', editParams);
+  };
+
+  const updateDetails = async (details: { description?: string; photoURL?: string | null }) => {
+    if (!user || !canEditDetails) return;
+    setSavingDetails(true);
+    try {
+      await saveEventDetails(eventId, user.uid, details);
+      setDescriptionEditorOpen(false);
+    } catch (err) {
+      Alert.alert('Unable to Save', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
+  const choosePhoto = async (source: 'camera' | 'library') => {
+    if (!canEditDetails || photoLoading) return;
+    setPhotoLoading(true);
+    try {
+      const result = source === 'camera' ? await takeProfilePhoto() : await pickPhotoFromLibrary();
+      if (result.error) Alert.alert('Photo Error', result.error);
+      else if (result.photo && user) {
+        await saveEventDetails(eventId, user.uid, { photoURL: result.photo.dataUrl });
+      }
+    } catch (err) {
+      Alert.alert('Photo Error', err instanceof Error ? err.message : 'Unable to update photo.');
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
+
+  const openPhotoOptions = () => {
+    if (!canEditDetails || photoLoading) return;
+    if (Platform.OS === 'web') {
+      void choosePhoto('library');
+      return;
+    }
+    Alert.alert('Event Photo', 'Choose an event cover photo', [
+      { text: 'Choose from Library', onPress: () => void choosePhoto('library') },
+      { text: 'Take Photo', onPress: () => void choosePhoto('camera') },
+      ...(event?.photoURL ? [{ text: 'Remove Photo', onPress: () => void updateDetails({ photoURL: null }) }] : []),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
+  };
 
   const getEntry = (entry: {type: 'item' | 'task'; id: number} | null) =>
     entry ? (entry.type === 'item' ? draftItems : draftTasks).find(e => e.id === entry.id) : undefined;
@@ -263,7 +344,7 @@ const handleSave = async () => {
     const entry = getEntry(assignmentEntry);
     if (!entry) return;
     if (assigneeId !== null && !(event?.participantIds ?? []).includes(assigneeId)) return;
-    if (!isAdmin && !((entry.assigneeId == null && assigneeId === user.uid) ||
+    if (!isCreator && !((entry.assigneeId == null && assigneeId === user.uid) ||
       (entry.assigneeId === user.uid && assigneeId === null))) return;
     updateDraft(assignmentEntry.type, entries => entries.map(e => e.id === assignmentEntry.id ? {...e, assigneeId} : e));
     setAssignmentEntry(null);
@@ -361,7 +442,7 @@ const handleSave = async () => {
         >
           {/* EVENT PHOTO */}
           <View style={styles.photoContainer}>
-            <View style={styles.photoCircle}>
+            <Pressable style={styles.photoCircle} onPress={openPhotoOptions} disabled={!canEditDetails || photoLoading} accessibilityLabel="Edit event photo">
               {event.photoURL ? (
                 <Image
                   source={{ uri: event.photoURL }}
@@ -374,29 +455,31 @@ const handleSave = async () => {
                   color={colors.white}
                 />
               )}
-            </View>
+            </Pressable>
           </View>
 
-          <Text style={styles.eventTitle}>
+          <Pressable onPress={() => openEditRoute('EditEventDetails')} disabled={!canEditDetails}>
+            <Text style={styles.eventTitle}>
             {event.title || 'Untitled Event'}
-          </Text>
+            </Text>
+          </Pressable>
 
           {/* EVENT INFO: SAME TWO-COLUMN LAYOUT */}
           <View style={styles.eventInfo}>
             <View style={styles.eventInfoLeft}>
-              <Text style={styles.eventInfoText}>
-                {event.category || 'No Category'}
-              </Text>
+              <Pressable onPress={() => openEditRoute('EditEventDetails')} disabled={!canEditDetails}>
+                <Text style={styles.eventInfoText}>{event.category || 'No Category'}</Text>
+              </Pressable>
 
-              <Text style={styles.eventInfoText}>
-                {formatEventDate(eventTimes)}
-              </Text>
+              <Pressable onPress={() => openEditRoute('EditEventTime')} disabled={!canEditDetails || !isCreator}>
+                <Text style={styles.eventInfoText}>{formatEventDate(eventTimes)}</Text>
+              </Pressable>
             </View>
 
             <View style={styles.infoDivider} />
 
             <View style={styles.eventInfoRight}>
-              <View style={styles.infoRow}>
+              <Pressable style={styles.infoRow} onPress={() => openEditRoute('EditEventLocation')} disabled={!canEditDetails || !isCreator}>
                 <Ionicons
                   name="location-outline"
                   size={19}
@@ -405,9 +488,9 @@ const handleSave = async () => {
                 <Text style={styles.eventInfoText}>
                   {event.location || 'Location not selected'}
                 </Text>
-              </View>
+              </Pressable>
 
-              <View style={styles.infoRow}>
+              <Pressable style={styles.infoRow} onPress={() => openEditRoute('EditEventTime')} disabled={!canEditDetails || !isCreator}>
                 <Ionicons
                   name="time-outline"
                   size={19}
@@ -416,16 +499,14 @@ const handleSave = async () => {
                 <Text style={styles.eventInfoText}>
                   {formatEventTime(eventTimes)}
                 </Text>
-              </View>
+              </Pressable>
             </View>
           </View>
 
           {/* DESCRIPTION */}
-          <View style={styles.descriptionBox}>
-            <Text style={styles.descriptionText}>
-              {event.description || 'Event Description...'}
-            </Text>
-          </View>
+          <Pressable style={styles.descriptionBox} disabled={!canEditDetails} onPress={() => { setDescriptionDraft(event.description ?? ''); setDescriptionEditorOpen(true); }}>
+            <Text style={styles.descriptionText}>{event.description || 'Event Description...'}</Text>
+          </Pressable>
 
           {/* ATTENDEES */}
           <Text style={styles.sectionHeadingText}>Attendees</Text>
@@ -437,7 +518,7 @@ const handleSave = async () => {
             contentContainerStyle={styles.attendeeContent}
           >
             {(event.participantIds ?? [])
-              .filter(id => event.rsvps?.[id] === 'yes')
+              .filter((id) => event.rsvps?.[id] === 'yes')
               .map((id) => {
               const photo = attendeePhotos[id];
 
@@ -507,7 +588,7 @@ const handleSave = async () => {
                 </Pressable>
                 <Pressable
                     onPress={() => handleToggle('item', item.id)}
-                    disabled={saving || !canManage}
+                    disabled={saving || !canEdit}
                     accessibilityLabel={`Toggle ${item.name}`}
                     >
                     <Ionicons
@@ -556,7 +637,7 @@ const handleSave = async () => {
               <View style={styles.planningRight}>
                 <Pressable
                     onPress={() => handleToggle('task', task.id)}
-                    disabled={saving || !canManage}
+                    disabled={saving || !canEdit}
                     accessibilityLabel={`Toggle ${task.name}`}
                     >
                     <Ionicons
@@ -577,17 +658,34 @@ const handleSave = async () => {
             <Ionicons name="add" size={32} color={colors.white} />
             </Pressable>}
 
-          {/* DELETE EVENT: FUNCTIONALITY COMES LATER */}
-          <View style={styles.deleteButton}>
-            <Ionicons
-              name="trash-outline"
-              size={25}
-              color={colors.red}
-            />
-            <Text style={styles.deleteText}>Delete Event</Text>
-          </View>
+          {isCreator && (
+  <Pressable
+    style={styles.deleteButton}
+    disabled={deletingEvent}
+    onPress={() => setDeleteEventConfirmOpen(true)}
+    accessibilityRole="button"
+    accessibilityLabel="Delete Event"
+  >
+    <Ionicons name="trash-outline" size={25} color={colors.red} />
+    <Text style={styles.deleteText}>
+      {deletingEvent ? 'Deleting...' : 'Delete Event'}
+    </Text>
+  </Pressable>
+)}
         </ScrollView>
       )}
+      <Modal visible={descriptionEditorOpen} transparent animationType="fade" onRequestClose={() => { if (!savingDetails) setDescriptionEditorOpen(false); }}>
+        <View style={styles.editModalOverlay}>
+          <View style={styles.editModalCard}>
+            <Text style={styles.editModalTitle}>Edit Description</Text>
+            <TextInput multiline style={[styles.editModalInput, styles.descriptionInput]} value={descriptionDraft} onChangeText={setDescriptionDraft} placeholder="Event description" placeholderTextColor="#AAAAAA" maxLength={2000} editable={!savingDetails} />
+            <View style={styles.editModalActions}>
+              <Pressable style={styles.editModalCancelButton} disabled={savingDetails} onPress={() => setDescriptionEditorOpen(false)}><Text style={styles.editModalButtonText}>Cancel</Text></Pressable>
+              <Pressable style={styles.editModalSaveButton} disabled={savingDetails} onPress={() => void updateDetails({ description: descriptionDraft.trim() })}><Text style={styles.editModalButtonText}>{savingDetails ? 'Saving...' : 'Save'}</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={addType !== null}
         transparent
@@ -709,7 +807,7 @@ const handleSave = async () => {
                 <Ionicons name="person-add-outline" size={22} color={colors.white} />
                 <Text style={styles.editModalButtonText}>Assign to myself</Text>
               </Pressable>
-            ) : !isAdmin ? <Text style={styles.assignmentLabel}>This is assigned to another member.</Text> : null}
+            ) : !isCreator ? <Text style={styles.assignmentLabel}>This is assigned to another member.</Text> : null}
             {canManage && (
               <>
                 <Text style={styles.assignmentLabel}>Assign to a participant</Text>
@@ -741,6 +839,39 @@ const handleSave = async () => {
         </Pressable>
       </Modal>
 
+      <Modal
+        visible={deleteEventConfirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deletingEvent) setDeleteEventConfirmOpen(false);
+        }}
+      >
+        <View style={styles.editModalOverlay}>
+          <View style={styles.editModalCard}>
+            <Text style={styles.editModalTitle}>Delete Event?</Text>
+            <Text>This permanently deletes the event for everyone.</Text>
+            <View style={styles.editModalActions}>
+              <Pressable
+                style={styles.editModalCancelButton}
+                disabled={deletingEvent}
+                onPress={() => setDeleteEventConfirmOpen(false)}
+              >
+                <Text style={styles.editModalButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.editModalSaveButton}
+                disabled={deletingEvent}
+                onPress={() => void confirmDeleteEvent()}
+              >
+                <Text style={styles.editModalButtonText}>
+                  {deletingEvent ? 'Deleting...' : 'Delete Event'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       {/* Long-press delete modal, matching Review Event. */}
       <Modal visible={deleteEntry !== null} transparent animationType="fade" onRequestClose={() => { if (!saving) setDeleteEntry(null); }}>
         <Pressable style={styles.editModalOverlay} onPress={() => { if (!saving) setDeleteEntry(null); }}>
@@ -1039,6 +1170,7 @@ const styles = StyleSheet.create({
     fontSize: 21,
     textAlign: 'center',
   },
+  descriptionInput: { height: 130, textAlignVertical: 'top', paddingVertical: 12 },
   editModalInput: {
     height: 50,
     borderRadius: 12,

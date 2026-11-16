@@ -637,7 +637,7 @@ topRow: {
   bottomContainer: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
+    paddingBottom: 40,
   },
 
   confirmGradient: {

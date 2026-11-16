@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Pressable,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,6 +10,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Timestamp } from 'firebase/firestore';
 
 import { ContinueButton } from '@/components/ContinueButton';
 import {
@@ -16,11 +19,22 @@ import {
   type DropdownOption,
 } from '@/components/Dropdown';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { colors, fontFamily, spacing } from '@/theme';
+import {
+  colors,
+  fontFamily,
+  spacing,
+  gradients,
+  gradientDirection,
+} from '@/theme';
+
+import { auth } from '@/config/firebase';
+import { saveEventDetails } from '@/features/events/eventEditingService';
 import { getGoogleCalendarSnapshot, type CalendarSnapshot } from '@/features/calendar/googleCalendar';
 import { getDayAvailability } from '@/features/events/dayAvailability';
 
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
+import type { AppStackParamList } from '@/navigation/types';
+
 import {
   createDefaultRange,
   createDefaultTimes,
@@ -37,26 +51,52 @@ import {
   type SelectableRange,
 } from '@/features/events/eventTimes';
 
-type Props = NativeStackScreenProps<
+type CreationProps = NativeStackScreenProps<
   EventCreationStackParamList,
   'PickTime'
 >;
 
-export function PickTimeScreen({
-  navigation,
-  route,
-}: Props) {
-  // Fixed when the screen opens so the options don't shift while the planner chooses.
+type EditingProps = NativeStackScreenProps<
+  AppStackParamList,
+  'EditEventTime'
+>;
+
+type ScreenProps =
+  | { mode: 'create'; screen: CreationProps }
+  | { mode: 'edit'; screen: EditingProps };
+
+export function PickTimeScreen(props: CreationProps) {
+  return <TimeForm mode="create" screen={props} />;
+}
+
+export function EditEventTimeScreen(props: EditingProps) {
+  return <TimeForm mode="edit" screen={props} />;
+}
+
+function TimeForm(props: ScreenProps) {
+  const isEditing = props.mode === 'edit';
+  const params = props.screen.route.params;
+
+  // Keep the available dates stable while this screen is open.
   const [range] = useState(() => createDefaultRange());
 
-  // The one copy of the event's time. When the heat map is added, its drag
-  // should call setTimes too; the dropdowns then show whatever it picked.
   const [times, setTimes] = useState<EventTimes>(() => {
-    const { startAt, endAt } = route.params;
-    return startAt && endAt
-      ? { start: new Date(startAt), end: new Date(endAt) }
-      : createDefaultTimes(range);
+    if (params.startAt && params.endAt) {
+      const start = new Date(params.startAt);
+      const end = new Date(params.endAt);
+
+      if (
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime())
+      ) {
+        return { start, end };
+      }
+    }
+
+    return createDefaultTimes(range);
   });
+
+  const [saving, setSaving] = useState(false);
 
   const dateOptions = useMemo(
     () => getDateOptions(range),
@@ -65,36 +105,83 @@ export function PickTimeScreen({
 
   const error = validateEventTimes(times);
 
-  const handleConfirmTime = () => {
-  if (error) {
-    return;
-  }
+  const handleConfirmTime = async () => {
+    if (error || saving) return;
 
-  const { editingFromReview, ...details } = route.params;
-  const params = {
-    ...details,
-    startAt: times.start.toISOString(),
-    endAt: times.end.toISOString(),
+    if (props.mode === 'edit') {
+      const actorId = auth.currentUser?.uid;
+
+      if (!actorId) {
+        Alert.alert(
+          'Sign In Required',
+          'Please sign in before editing this event.'
+        );
+        return;
+      }
+
+      setSaving(true);
+
+      try {
+        await saveEventDetails(
+          props.screen.route.params.editingEventId,
+          actorId,
+          {
+            startAt: Timestamp.fromDate(times.start),
+            endAt: Timestamp.fromDate(times.end),
+          }
+        );
+
+        props.screen.navigation.goBack();
+      } catch (error) {
+        Alert.alert(
+          'Unable to Save',
+          error instanceof Error
+            ? error.message
+            : 'Please try again.'
+        );
+      } finally {
+        setSaving(false);
+      }
+
+      return;
+    }
+
+    const { navigation, route } = props.screen;
+
+    const { editingFromReview, ...details } = route.params;
+    const params = {
+      ...details,
+      startAt: times.start.toISOString(),
+      endAt: times.end.toISOString(),
+    };
+    if (editingFromReview) {
+      navigation.navigate({ name: 'ReviewEvent', params, merge: true, pop: true });
+      return;
+    }
+    navigation.navigate('PickLocation', params);
   };
-  if (editingFromReview) {
-    navigation.navigate({ name: 'ReviewEvent', params, merge: true, pop: true });
-    return;
-  }
-  navigation.navigate('PickLocation', params);
-};
 
   return (
-    <View style={styles.screen}>
+    <LinearGradient
+      colors={gradients.background}
+      {...gradientDirection.vertical}
+      style={styles.screen}
+    >
       <ScreenHeader
-        title="Pick a Time"
-        onBack={() => navigation.goBack()}
+        title={
+          isEditing
+            ? 'Edit Event Time'
+            : 'Pick a Time'
+        }
+        onBack={() => props.screen.navigation.goBack()}
       />
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}        >
-        <EventMonthCalendar initialDate={times.start} memberIds={route.params.selectedMemberIds} />
+        showsVerticalScrollIndicator={false}
+      >
+        <EventMonthCalendar initialDate={times.start} memberIds={props.mode === 'create' ? props.screen.route.params.selectedMemberIds : []} />
 
         <View style={styles.timeCard}>
           <TimeRow
@@ -103,7 +190,10 @@ export function PickTimeScreen({
             range={range}
             dateOptions={dateOptions}
             onChange={(start) =>
-              setTimes((current) => ({ ...current, start }))
+              setTimes((current) => ({
+                ...current,
+                start,
+              }))
             }
           />
 
@@ -114,7 +204,10 @@ export function PickTimeScreen({
             dateOptions={dateOptions}
             invalid={error !== null}
             onChange={(end) =>
-              setTimes((current) => ({ ...current, end }))
+              setTimes((current) => ({
+                ...current,
+                end,
+              }))
             }
           />
 
@@ -131,12 +224,18 @@ export function PickTimeScreen({
 
       <View style={styles.confirmContainer}>
         <ContinueButton
-          title="Confirm Time"
-          onPress={handleConfirmTime}
-          disabled={error !== null}
+          title={
+            saving
+              ? 'Saving...'
+              : isEditing
+                ? 'Save Changes'
+                : 'Confirm Time'
+          }
+          onPress={() => void handleConfirmTime()}
+          disabled={error !== null || saving}
         />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -294,7 +393,6 @@ function TimeRow({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
 
   scrollView: {
@@ -365,7 +463,7 @@ const styles = StyleSheet.create({
   confirmContainer: {
     paddingHorizontal: 13,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
-    backgroundColor: colors.bg,
+    paddingBottom: 40,
+    backgroundColor: 'transparent',
   },
 });
