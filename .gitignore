@@ -28,3 +28,6 @@ GoogleService-Info.plist
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Firebase emulator logs
+*-debug.log

@@ -3,29 +3,35 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { colors, text } from '@/theme';
 
 // Flat-color mark: two people meeting at the center of the M.
+export function LogoMark({ size = 44 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 144 160">
+      <Circle cx={18} cy={18} r={18} fill="#8CABFF" />
+      <Circle cx={126} cy={18} r={18} fill="#7B3FF2" />
+      <Path
+        d="M16 144 V70 L72 122"
+        fill="none"
+        stroke="#8CABFF"
+        strokeWidth={32}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M72 122 L128 70 V144"
+        fill="none"
+        stroke="#7B3FF2"
+        strokeWidth={32}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export function Logo() {
   return (
     <View style={styles.logoWrap}>
-      <Svg width={44} height={44} viewBox="0 0 144 160">
-        <Circle cx={18} cy={18} r={18} fill="#8CABFF" />
-        <Circle cx={126} cy={18} r={18} fill="#7B3FF2" />
-        <Path
-          d="M16 144 V70 L72 122"
-          fill="none"
-          stroke="#8CABFF"
-          strokeWidth={32}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <Path
-          d="M72 122 L128 70 V144"
-          fill="none"
-          stroke="#7B3FF2"
-          strokeWidth={32}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+      <LogoMark />
       <Text style={styles.brand}>MeetAgain</Text>
     </View>
   );

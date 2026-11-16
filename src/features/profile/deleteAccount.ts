@@ -96,6 +96,8 @@ export async function deleteAccount(user: User): Promise<void> {
   const batch = writeBatch(db);
   batch.delete(doc(db, 'publicProfiles', uid));
   batch.delete(doc(db, 'friendCounts', uid));
+  // A MeetNow status outlives nothing; remove it with the rest of the account.
+  batch.delete(doc(db, 'freeNow', uid));
   batch.delete(userRef);
   await batch.commit();
   await deleteAuthUser(user);

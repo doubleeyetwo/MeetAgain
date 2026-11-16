@@ -40,6 +40,7 @@ import {
 import { EditPhoto } from '@/components/EditPhoto';
 
 import { createEvent } from '@/features/events/eventService';
+import { getTemplate } from '@/features/events/eventTemplates';
 import { createGroup } from '@/features/messages/groups';
 import { getOrCreateDirectConversation } from '@/features/messages/directConversations';
 
@@ -110,12 +111,34 @@ export function ReviewEventScreen({ navigation, route }: Props) {
   const [reminder, setReminder] = useState('24 hours before');
   const [reminderOpen, setReminderOpen] = useState(false);
 
-  const [items, setItems] = useState<EventItem[]>([]);
-  const [tasks, setTasks] = useState<EventTask[]>([]);
+  const [items, setItems] = useState<EventItem[]>(() => {
+    const template = getTemplate(route.params.presetId);
+
+    return (template?.items ?? []).map((name, index) => ({
+      id: -(index + 1),
+      name,
+      price: 0,
+      completed: false,
+      assigneeId: null,
+    }));
+  });
+
+  const [tasks, setTasks] = useState<EventTask[]>(() => {
+    const template = getTemplate(route.params.presetId);
+
+    return (template?.tasks ?? []).map((name, index) => ({
+      id: -(index + 1),
+      name,
+      completed: false,
+      assigneeId: null,
+    }));
+  });
 
   const [modalType, setModalType] = useState<AddType | null>(null);
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
+  const [editedPrice, setEditedPrice] = useState('');
 
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
   const [attendeePhotos, setAttendeePhotos] = useState<
@@ -382,6 +405,44 @@ export function ReviewEventScreen({ navigation, route }: Props) {
           : item
       )
     );
+  };
+
+  const openPriceEditor = (item: EventItem) => {
+  setEditingPriceId(item.id);
+  setEditedPrice(item.price.toFixed(2));
+};
+
+  const closePriceEditor = () => {
+    setEditingPriceId(null);
+    setEditedPrice('');
+  };
+
+  const saveEditedPrice = () => {
+    if (editingPriceId === null) return;
+
+    const price = Number(editedPrice.trim());
+
+    if (
+      !editedPrice.trim() ||
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      Alert.alert(
+        'Invalid Price',
+        'Enter a valid price of $0 or more.'
+      );
+      return;
+    }
+
+    setItems((current) =>
+      current.map((item) =>
+        item.id === editingPriceId
+          ? { ...item, price }
+          : item
+      )
+    );
+
+    closePriceEditor();
   };
 
   const toggleTask = (id: number) => {
@@ -750,6 +811,7 @@ if (directConversationId) {
           })}
         </ScrollView>
 
+      
         {/* REMINDER DROPDOWN */}
 
         <View style={styles.reminderContainer}>
@@ -828,12 +890,19 @@ if (directConversationId) {
             {renderAvatar('item', item.id, item.assigneeId)}
 
             <View style={styles.planningRight}>
-              <Text
-                style={styles.planningPrice}
-                numberOfLines={1}
+              <Pressable
+                onPress={() => openPriceEditor(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit price for ${item.name}`}
+                hitSlop={8}
               >
-                {formatPrice(item.price)}
-              </Text>
+                <Text
+                  style={styles.planningPrice}
+                  numberOfLines={1}
+                >
+                  {formatPrice(item.price)}
+                </Text>
+              </Pressable>
 
               <Pressable
                 onPress={() => toggleItem(item.id)}
@@ -956,24 +1025,85 @@ if (directConversationId) {
 
       {/* CONFIRM EVENT */}
 
-      <View style={styles.confirmContainer}>
-        <Pressable
-          onPress={() => void handleConfirmEvent()}
-          disabled={savingEvent}
-          style={styles.confirmButton}
+      <Pressable
+        onPress={handleConfirmEvent}
+        disabled={savingEvent}
+      >
+        <LinearGradient
+          colors={gradients.purpleAccent}
+          start={gradientDirection.horizontal.start}
+          end={gradientDirection.horizontal.end}
+          style={styles.confirmGradient}
         >
-          <LinearGradient
-            colors={gradients.purpleAccent}
-            start={gradientDirection.horizontal.start}
-            end={gradientDirection.horizontal.end}
-            style={styles.confirmGradient}
-          >
-            <Text style={styles.confirmText}>
-              Confirm Event
+          <Text style={styles.confirmText}>
+            Confirm Event
+          </Text>
+        </LinearGradient>
+      </Pressable>
+        
+      {/* EDIT ITEM PRICE MODAL */}
+
+      <Modal
+        visible={editingPriceId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closePriceEditor}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              Edit Item Price
             </Text>
-          </LinearGradient>
-        </Pressable>
-      </View>
+
+            <TextInput
+              style={styles.modalInput}
+              value={editedPrice}
+              onChangeText={setEditedPrice}
+              placeholder="Price ($)"
+              placeholderTextColor={colors.white}
+              keyboardType="decimal-pad"
+              selectTextOnFocus
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.cancelButton}
+                onPress={closePriceEditor}
+              >
+                <Text style={styles.modalActionText}>
+                  Cancel
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  backgroundColor: colors.cardDarker,
+                  paddingHorizontal: 24,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  minWidth: 90,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={saveEditedPrice}
+              >
+                <Text
+                  style={[
+                    styles.modalActionText,
+                    { color: '#f8f5f5' },
+                  ]}
+                >
+                  Save
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    
 
       {/* ADD ITEM / TASK MODAL */}
 

@@ -13,6 +13,11 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { ContinueButton } from '@/components/ContinueButton';
 import { colors, fontFamily, spacing } from '@/theme';
 
+import {
+  EVENT_TEMPLATES,
+  buildTemplateParams,
+  type EventTemplate,
+} from '@/features/events/eventTemplates';
 import type { EventCreationStackParamList } from '@/features/events/navigation/EventCreationNavigator';
 
 type Props = NativeStackScreenProps<
@@ -20,64 +25,15 @@ type Props = NativeStackScreenProps<
   'EventTemplates'
 >;
 
-const EVENT_TEMPLATES = [
-  {
-    id: 'campfire',
-    name: 'Campfire',
-    category: 'Outdoors',
-    icon: 'bonfire-outline',
-  },
-  {
-    id: 'study-session',
-    name: 'Study Session',
-    category: 'Study',
-    icon: 'book-outline',
-  },
-  {
-    id: 'dinner',
-    name: 'Dinner',
-    category: 'Food & Dining',
-    icon: 'restaurant-outline',
-  },
-  {
-    id: 'movie-night',
-    name: 'Movie Night',
-    category: 'Entertainment',
-    icon: 'film-outline',
-  },
-  {
-    id: 'beach-day',
-    name: 'Beach Day',
-    category: 'Outdoors',
-    icon: 'sunny-outline',
-  },
-  {
-    id: 'game-night',
-    name: 'Game Night',
-    category: 'Entertainment',
-    icon: 'game-controller-outline',
-  },
-  {
-    id: 'shopping',
-    name: 'Shopping',
-    category: 'Other',
-    icon: 'bag-handle-outline',
-  },
-] as const;
-
 export function EventTemplatesScreen({ navigation }: Props) {
   const openCustomEvent = () => {
     navigation.navigate('EventDetails');
   };
 
-  const openPresetEvent = (
-    presetId: string,
-    category: string
-  ) => {
-    navigation.navigate('EventDetails', {
-      presetId,
-      category,
-    });
+  const openPresetEvent = (template: EventTemplate) => {
+    // Fresh params every time, so switching templates never carries over
+    // anything from a previous choice.
+    navigation.navigate('EventDetails', buildTemplateParams(template));
   };
 
   return (
@@ -96,16 +52,11 @@ export function EventTemplatesScreen({ navigation }: Props) {
               styles.template,
               pressed && styles.pressed,
             ]}
-            onPress={() =>
-              openPresetEvent(
-                template.id,
-                template.category
-              )
-            }
+            onPress={() => openPresetEvent(template)}
           >
             <View style={styles.iconContainer}>
               <Ionicons
-                name={template.icon}
+                name={template.icon as keyof typeof Ionicons.glyphMap}
                 size={30}
                 color={colors.white}
               />
