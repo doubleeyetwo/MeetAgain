@@ -73,21 +73,33 @@ function createHooks() {
 const component = (name) => { const Component = () => null; Component.displayName = name; return Component; };
 const native = {
   ActivityIndicator: component('ActivityIndicator'), Image: component('Image'), KeyboardAvoidingView: component('KeyboardAvoidingView'),
+  FlatList: component('FlatList'),
   Modal: component('Modal'), Platform: { OS: 'ios' }, Pressable: component('Pressable'), ScrollView: component('ScrollView'),
   StyleSheet: { create: (value) => value }, Text: component('Text'), TextInput: component('TextInput'), View: component('View'),
 };
 const Dummy = component('Dummy');
+const PollResultsChart = component('PollResultsChart');
 const theme = {
   colors: { white: '#fff', red: '#f33', cardDarker: '#210', cardLighter: '#321', primaryAccent: '#70f' },
   gradientDirection: { horizontal: {}, vertical: {} }, gradients: { background: ['#111', '#000'], purpleAccent: ['#b4f', '#80d'] },
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 }, text: { title: {}, header: {}, body: {} },
 };
 
-function loadPolls(addDoc = async () => { throw new Error('unexpected write'); }) {
+function loadPolls(commit = async () => { throw new Error('unexpected write'); }) {
   return load('polls.ts', {
     'firebase/firestore': {
-      addDoc,
       collection: (_db, ...segments) => ({ path: segments.join('/') }),
+      doc: (parent, ...segments) => segments.length
+        ? { path: segments.join('/') }
+        : { id: 'poll1', path: `${parent.path}/poll1` },
+      writeBatch: () => {
+        // Publish the captured writes together when the production batch commits.
+        const writes = [];
+        return {
+          set: (ref, data) => writes.push({ path: ref.path, data }),
+          commit: () => commit(JSON.parse(JSON.stringify(writes))),
+        };
+      },
       serverTimestamp: () => ({ serverTimestamp: true }),
     },
     '@/config/firebase': { db: {} },
@@ -101,6 +113,7 @@ function loadPollModal({ onPost = async () => assert.fail('unexpected post'), on
     'react-native': native,
     '@expo/vector-icons': { Ionicons: Dummy },
     'expo-linear-gradient': { LinearGradient: Dummy },
+    '@/components/Dropdown': { Dropdown: Dummy },
     '@/theme': theme,
     '@/features/messages/polls': loadPolls(),
   });
@@ -189,8 +202,8 @@ test('Post sends the trimmed poll once, then closes and clears the pop-up', asyn
   let closes = 0;
   let finishPost;
   const ui = loadPollModal({
-    onPost: (question, options) => {
-      posts.push([question, Array.from(options)]);
+    onPost: (question, options, durationHours) => {
+      posts.push([question, Array.from(options), durationHours]);
       return new Promise((resolve) => { finishPost = resolve; });
     },
     onClose: () => { closes++; },
@@ -207,7 +220,7 @@ test('Post sends the trimmed poll once, then closes and clears the pop-up', asyn
   assert.equal(post.props.disabled, false);
   post.props.onPress();
   post.props.onPress();
-  assert.deepEqual(posts, [['Party Theme', ['Masquerade', 'Great Gatsby']]]);
+  assert.deepEqual(posts, [['Party Theme', ['Masquerade', 'Great Gatsby'], loadPolls().DEFAULT_POLL_DURATION_HOURS]]);
 
   tree = ui.render();
   assert.equal(button(tree, 'Post poll').props.disabled, true);
@@ -272,28 +285,37 @@ test('canceling discards the entered text and posts nothing', () => {
   assert.equal(input(tree, 'Poll question').props.value, '');
 });
 
-test('sendGroupPoll writes a trimmed poll message to the group chat', async () => {
+test('sendGroupPoll commits the timed poll and trimmed chat message together', async () => {
   const writes = [];
-  const polls = loadPolls(async (ref, data) => { writes.push({ path: ref.path, data: JSON.parse(JSON.stringify(data)) }); });
+  const polls = loadPolls(async (batch) => { writes.push(...batch); });
 
-  await polls.sendGroupPoll('group1', 'alice', ' Party Theme ', ['Masquerade', '', ' Great Gatsby ']);
+  await polls.sendGroupPoll('group1', 'alice', ' Party Theme ', ['Masquerade', '', ' Great Gatsby '], 24);
   assert.deepEqual(writes, [{
-    path: 'groups/group1/messages',
+    path: 'groups/group1/polls/poll1',
+    data: { createdBy: 'alice', question: 'Party Theme', options: ['Masquerade', 'Great Gatsby'], votes: {}, durationHours: 24, createdAt: { serverTimestamp: true } },
+  }, {
+    path: 'groups/group1/messages/poll1',
     data: { senderId: 'alice', type: 'poll', question: 'Party Theme', options: ['Masquerade', 'Great Gatsby'], createdAt: { serverTimestamp: true } },
   }]);
 
-  await assert.rejects(polls.sendGroupPoll('group1', 'alice', 'Party Theme', ['Only one']), /at least 2 answers/);
-  await assert.rejects(polls.sendGroupPoll('group1', 'alice', ' ', ['A', 'B']), /Add a question/);
-  assert.equal(writes.length, 1);
+  await assert.rejects(polls.sendGroupPoll('group1', 'alice', 'Party Theme', ['Only one'], 24), /at least 2 answers/);
+  await assert.rejects(polls.sendGroupPoll('group1', 'alice', ' ', ['A', 'B'], 24), /Add a question/);
+  assert.equal(writes.length, 2);
 });
 
 test('a posted poll renders as a Time to Vote card with its question and choices', () => {
-  const { PollMessageCard } = load('PollMessageCard.tsx', { 'react-native': native, '@/theme': theme });
+  const { PollMessageCard } = load('PollMessageCard.tsx', {
+    'react-native': native,
+    '@/theme': theme,
+    '@/features/messages/polls': loadPolls(),
+    '@/features/messages/PollResultsChart': { PollResultsChart },
+    '@/features/messages/useNow': { useNow: () => 0 },
+    '@/features/messages/usePoll': { usePoll: () => ({ poll: null, loading: false }) },
+  });
   const tree = PollMessageCard({ poll: { id: 'p1', senderId: 'bob', type: 'poll', question: 'Party Theme', options: ['Masquerade', 'Great Gatsby'], createdAt: null } });
   assert.ok(findText(tree, 'Time to Vote'));
   assert.ok(findText(tree, 'Party Theme'));
-  assert.ok(findText(tree, 'Masquerade'));
-  assert.ok(findText(tree, 'Great Gatsby'));
+  assert.deepEqual(find(tree, PollResultsChart).props.options, ['Masquerade', 'Great Gatsby']);
 });
 
 function loadConversation({ kind, messages = [], sendGroupPoll = async () => {} }) {
@@ -306,7 +328,11 @@ function loadConversation({ kind, messages = [], sendGroupPoll = async () => {} 
     '@expo/vector-icons': { Ionicons: Dummy },
     'expo-linear-gradient': { LinearGradient: Dummy },
     'react-native-safe-area-context': { SafeAreaView: Dummy },
-    'firebase/firestore': { doc: () => ({}), getDoc: async () => ({ exists: () => false }) },
+    'firebase/firestore': {
+      doc: () => ({}), getDoc: async () => ({ exists: () => false }),
+      collection: () => ({}), query: () => ({}), where: () => ({}),
+      onSnapshot: (_query, onChange) => { onChange({ docs: [] }); return () => {}; },
+    },
     '@/config/firebase': { db: {} },
     '@/data/firestorePaths': { collections: { publicProfiles: 'publicProfiles' } },
     '@/features/auth/AuthContext': { useAuth: () => ({ user: { uid: 'alice' } }) },
@@ -320,6 +346,9 @@ function loadConversation({ kind, messages = [], sendGroupPoll = async () => {} 
     '../polls': { sendGroupPoll },
     '../PollCreationModal': { PollCreationModal },
     '../PollMessageCard': { PollMessageCard },
+    '../PollVotingModal': { PollVotingModal: Dummy },
+    '../EventChatCard': { EventChatCard: Dummy },
+    '../groups': { watchGroup: (_id, onChange) => { onChange({ memberIds: ['alice', 'bob'] }); return () => {}; } },
     '../directMessages': {
       sendDirectMessage: async () => {},
       watchDirectMessages: (_conversationId, onChange) => { onChange(messages); return () => {}; },
@@ -331,7 +360,7 @@ function loadConversation({ kind, messages = [], sendGroupPoll = async () => {} 
   const params = kind === 'group'
     ? { kind, title: 'Group1', memberIds: ['alice', 'bob'], groupId: 'group1' }
     : { kind, title: 'Bob', memberIds: ['alice', 'bob'], directConversationId: 'alice_bob' };
-  const props = { navigation: { goBack() {} }, route: { params } };
+  const props = { navigation: { goBack() {}, addListener: () => () => {} }, route: { params } };
   return { render: () => hooks.render(exports.ConversationScreen, props), PollCreationModal, PollMessageCard };
 }
 
@@ -342,7 +371,9 @@ test('the plus menu opens poll creation and posted polls show in the group chat'
   // The first render subscribes to messages; the second shows them.
   ui.render();
   let tree = ui.render();
-  assert.equal(find(tree, ui.PollMessageCard).props.poll.question, 'Party Theme');
+  const timeline = find(tree, native.FlatList);
+  const pollRow = timeline.props.renderItem({ item: timeline.props.data[0] });
+  assert.equal(find(pollRow, ui.PollMessageCard).props.poll.question, 'Party Theme');
   assert.equal(find(tree, ui.PollCreationModal).props.visible, false);
   assert.equal(button(tree, 'Create a poll'), undefined);
 
@@ -355,8 +386,8 @@ test('the plus menu opens poll creation and posted polls show in the group chat'
   assert.equal(button(tree, 'Create a poll'), undefined);
   assert.equal(button(tree, 'Upload photo'), undefined);
 
-  await find(tree, ui.PollCreationModal).props.onPost('Party Theme', ['Masquerade', 'Great Gatsby']);
-  assert.deepEqual(sent, [['group1', 'alice', 'Party Theme', ['Masquerade', 'Great Gatsby']]]);
+  await find(tree, ui.PollCreationModal).props.onPost('Party Theme', ['Masquerade', 'Great Gatsby'], 24);
+  assert.deepEqual(sent, [['group1', 'alice', 'Party Theme', ['Masquerade', 'Great Gatsby'], 24]]);
 
   find(tree, ui.PollCreationModal).props.onClose();
   tree = ui.render();

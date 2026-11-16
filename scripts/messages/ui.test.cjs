@@ -93,7 +93,7 @@ function loadAddMembers({ friends, createGroup }) {
     refIndex = 0;
     effectIndex = 0;
     pendingEffects = [];
-    const tree = module.exports.AddMembersScreen();
+    const tree = module.exports.AddMembersScreen({ navigation, route: {} });
     for (const effect of pendingEffects) {
       const previous = effects[effect.index];
       if (previous?.cleanup) previous.cleanup();
