@@ -21,10 +21,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { colors, gradients, spacing } from '@/theme';
-import {
-  MeetNowBar,
-  placeholderMeetNowFriends,
-} from '../components/MeetNowBar';
+import { meetNowList } from '../meetNow';
+import { useMeetNowFriends, useMeetNowStatus } from '../useMeetNow';
+import { MeetNowBar } from '../components/MeetNowBar';
 import {
   UpcomingEventCard,
   type UpcomingEvent,
@@ -43,12 +42,29 @@ type SavedEvent = {
 export function HomeScreen() {
   const { user } = useAuth();
 
+  const meetNowFriends = useMeetNowFriends();
+  const meetNowStatus = useMeetNowStatus();
+
   const [upcomingEvents, setUpcomingEvents] = useState<
     UpcomingEvent[]
   >([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  // The user's own tile stays on screen either way, so the switch changes
+  // something they can watch rather than making a tile appear and vanish.
+  const meetNowPeople = meetNowList(
+    meetNowFriends.friends,
+    user?.uid
+      ? {
+          id: user.uid,
+          photoURL: meetNowStatus.photoURL,
+          displayName: meetNowStatus.displayName,
+          available: meetNowStatus.available,
+        }
+      : null,
+  );
 
   useEffect(() => {
     if (!user?.uid) {
@@ -136,8 +152,18 @@ export function HomeScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {/* MEETNOW - friends are placeholders until #34 is wired up. */}
-          <MeetNowBar friends={placeholderMeetNowFriends} />
+          {/* MEETNOW - accepted friends whose status has not expired. */}
+          <MeetNowBar
+            friends={meetNowPeople}
+            available={meetNowStatus.available}
+            onToggle={meetNowStatus.toggle}
+            toggleDisabled={
+              !user?.uid || meetNowStatus.loading || meetNowStatus.saving
+            }
+            loading={meetNowFriends.loading}
+            error={meetNowFriends.error}
+            statusError={meetNowStatus.error}
+          />
 
           {/* UPCOMING EVENTS */}
           <View style={styles.upcomingSection}>

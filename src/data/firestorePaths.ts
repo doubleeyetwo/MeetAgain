@@ -6,6 +6,7 @@ export const collections = {
   polls: 'availabilityPolls',
   notifications: 'notifications',
   friendships: 'friendships',
+  freeNow: 'freeNow',
   memories: 'memories',
   publicProfiles: 'publicProfiles',
 } as const;

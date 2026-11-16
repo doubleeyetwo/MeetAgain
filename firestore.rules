@@ -720,6 +720,34 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if isDeletingGroupOwner();
     }
+    // A MeetNow status is a single expiry timestamp other people may read.
+    // It stays out of the user document because that document is owner-only,
+    // the same reason friend totals live in their own collection.
+    match /freeNow/{userId} {
+      // Only an accepted friend may see that this account is free. The pair
+      // document ID uses the sorted UIDs, matching friendshipId() in the client.
+      function acceptedFriend() {
+        let viewer = request.auth.uid;
+        let members = viewer < userId ? [viewer, userId] : [userId, viewer];
+        let pairId = members[0] + '_' + members[1];
+        let pair = /databases/$(database)/documents/friendships/$(pairId);
+        return exists(pair)
+          && get(pair).data.status == 'accepted'
+          && get(pair).data.memberIds == members;
+      }
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || acceptedFriend());
+      // The window is capped server-side so a client cannot mark itself free for
+      // a week. The extra five minutes absorb device clock skew, since the
+      // client picks the expiry. Expiry is still re-checked on read.
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['expiresAt'])
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(125, 'm');
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
     match /{document=**} {
       allow read, write: if false;
     }
