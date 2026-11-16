@@ -54,7 +54,7 @@ export function useMeetNowStatus() {
       (snapshot) => {
         if (!active || !snapshot.exists()) return;
         const profile = snapshot.data() as PublicProfile;
-        setPhotoURL(profile.photoURL ?? profile.photoDataUrl ?? null);
+        setPhotoURL(profile.photoDataUrl || profile.photoURL || null);
         setDisplayName(profile.displayName ?? '');
       },
       () => {
@@ -199,7 +199,7 @@ export function useMeetNowFriends() {
                 const profile = snapshot.data() as PublicProfile;
                 profiles.set(friendUid, {
                   name: profile.displayName || profile.username || 'Friend',
-                  photoURL: profile.photoURL ?? profile.photoDataUrl ?? null,
+                  photoURL: profile.photoDataUrl || profile.photoURL || null,
                 });
                 publish();
               },

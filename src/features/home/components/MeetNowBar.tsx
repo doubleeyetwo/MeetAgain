@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Image,
   Pressable,
@@ -43,15 +44,19 @@ const AVATAR_SIZE = 76;
 const BADGE_SIZE = 23;
 
 function MeetNowAvatar({ friend }: { friend: MeetNowFriend }) {
+  // Track the failed URI so a new profile photo gets a chance to load.
+  const [failedPhoto, setFailedPhoto] = useState<string | null>(null);
+  const photoURL = friend.photoURL;
   const initial =
     (friend.avatarName ?? friend.name).trim().charAt(0).toLocaleUpperCase() ||
     '?';
 
   return (
     <View style={styles.avatarWrap}>
-      {friend.photoURL ? (
+      {photoURL && photoURL !== failedPhoto ? (
         <Image
-          source={{ uri: friend.photoURL }}
+          source={{ uri: photoURL }}
+          onError={() => setFailedPhoto(photoURL)}
           style={[styles.avatar, friend.isSelf && styles.avatarSelf]}
         />
       ) : (
