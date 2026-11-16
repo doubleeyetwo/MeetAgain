@@ -627,13 +627,12 @@ service cloud.firestore {
           function validNewPoll() {
             let poll = request.resource.data;
 
-            return poll.keys().hasAll(['createdBy', 'question', 'options', 'votes', 'createdAt'])
+            return poll.keys().hasAll(['createdBy', 'question', 'options', 'votes', 'durationHours', 'createdAt'])
             && poll.keys().hasOnly(['createdBy', 'question', 'options', 'votes', 'durationHours', 'createdAt'])
             && poll.createdBy == request.auth.uid
             && poll.votes == {}
             // Keep these Poll Timer choices in sync with POLL_DURATIONS in polls.ts.
-            && (!poll.keys().hasAny(['durationHours'])
-              || poll.durationHours in [1, 6, 12, 24, 72, 168])
+            && poll.durationHours in [1, 6, 12, 24, 72, 168]
             && poll.createdAt == request.time
             // The message rules validate the question and answers, so the poll must match them.
             && pollMessage().type == 'poll'
