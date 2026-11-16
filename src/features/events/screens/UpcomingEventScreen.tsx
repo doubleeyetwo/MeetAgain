@@ -22,7 +22,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { saveEventPlanningDraft, saveEventDetails } from '@/features/events/eventEditingService';
 import { pickPhotoFromLibrary, takeProfilePhoto } from '@/features/auth/profilePhoto';
 
-import { ScreenHeader } from '@/components/ScreenHeader';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '@/config/firebase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { colors, fontFamily, gradients, gradientDirection } from '@/theme';
@@ -396,15 +396,17 @@ const handleSave = async () => {
         style={StyleSheet.absoluteFill}
       />
 
-      <View style={styles.saveHeader}>
-        <Pressable onPress={() => navigation.goBack()} disabled={saving} accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={28} color={colors.white} />
-        </Pressable>
-        <Text style={styles.saveHeaderTitle}>{isPast ? 'Event Details' : 'Upcoming Event'}</Text>
-        <Pressable onPress={handleSave} disabled={!dirty || !canEdit || saving} accessibilityLabel="Save changes">
-          <Text style={[styles.saveHeaderAction, (!dirty || !canEdit || saving) && styles.saveHeaderDisabled]}>{saving ? 'Saving' : 'Save'}</Text>
-        </Pressable>
-      </View>
+      <SafeAreaView edges={['top']}>
+        <View style={styles.saveHeader}>
+          <Pressable onPress={() => navigation.goBack()} disabled={saving} accessibilityLabel="Back">
+            <Ionicons name="chevron-back" size={28} color={colors.white} />
+          </Pressable>
+          <Text style={styles.saveHeaderTitle}>{isPast ? 'Event Details' : 'Upcoming Event'}</Text>
+          <Pressable onPress={handleSave} disabled={!dirty || !canEdit || saving} accessibilityLabel="Save changes">
+            <Text style={[styles.saveHeaderAction, (!dirty || !canEdit || saving) && styles.saveHeaderDisabled]}>{saving ? 'Saving' : 'Save'}</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
 
       {invalidPlanning && <View style={styles.saveDiagnosticBox}><Text style={styles.saveDiagnosticText}>Some planning data is invalid and cannot be displayed. Editing is disabled to preserve the saved event.</Text></View>}
       {saveDiagnostic ? (

@@ -13,13 +13,66 @@ const {
   doc,
   setDoc,
   getDoc,
+  updateDoc,
   Timestamp,
   serverTimestamp,
 } = require("firebase/firestore");
 
 const projectId = "demo-meetagain-rules-test";
 
+test("creator can assign an item while preserving an unchanged legacy task", async () => {
+  const env = await setup();
+  const item = { id: 1, name: "Snacks", price: 5, completed: false, assigneeId: null };
+  const eventId = "creator-assigns-item";
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "events", eventId), {
+      ...eventData("alice", ["alice", "bob", "cara"], "assignment-group"),
+      startAt: Timestamp.fromMillis(Date.now() + 60 * 60 * 1000),
+      endAt: Timestamp.fromMillis(Date.now() + 2 * 60 * 60 * 1000),
+      items: [item],
+      tasks: [{ id: 2, name: "Bring cups", completed: false, assigneeId: null, legacy: true }],
+    });
+  });
+  const alice = doc(env.authenticatedContext("alice").firestore(), "events", eventId);
+  const bob = doc(env.authenticatedContext("bob").firestore(), "events", eventId);
+  const assign = (assigneeId) => ({
+    items: [{ ...item, assigneeId }],
+    updatedAt: serverTimestamp(),
+  });
+  await assertFails(updateDoc(bob, assign("cara")));
+  await assertFails(updateDoc(alice, assign("outsider")));
+  await assertSucceeds(updateDoc(alice, assign("bob")));
+  assert.equal((await getDoc(alice)).data().items[0].assigneeId, "bob");
+});
+
 let testEnv;
+
+test("upcoming event details respect participant and creator permissions", async () => {
+  const env = await setup();
+  const eventId = "edit-upcoming-details";
+  const now = Date.now();
+  const at = (hours) => Timestamp.fromMillis(now + hours * 60 * 60 * 1000);
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "events", eventId), {
+      ...eventData("alice", ["alice", "bob"], "details-group"),
+      startAt: at(1),
+      endAt: at(2),
+    });
+  });
+
+  const eventRef = (uid) => doc(env.authenticatedContext(uid).firestore(), "events", eventId);
+  const save = (uid, changes) => updateDoc(eventRef(uid), { ...changes, updatedAt: serverTimestamp() });
+
+  await assertSucceeds(save("bob", { title: "Updated title", category: "Other" }));
+  await assertSucceeds(save("bob", { description: "Meet at the entrance." }));
+  await assertSucceeds(save("bob", { photoURL: "data:image/jpeg;base64,AAAA" }));
+  await assertFails(save("bob", { location: "New venue" }));
+  await assertFails(save("bob", { startAt: at(3), endAt: at(4) }));
+  await assertFails(save("outsider", { title: "Unauthorized" }));
+  await assertSucceeds(save("alice", { location: "New venue" }));
+  await assertSucceeds(save("alice", { startAt: at(3), endAt: at(4) }));
+  await assertFails(save("alice", { startAt: at(5) }));
+});
 
 async function setup() {
   if (!testEnv) {

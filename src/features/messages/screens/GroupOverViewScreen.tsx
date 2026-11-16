@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import type { MessagesStackParamList } from '@/navigation/types';
+import type { AppStackParamList, MessagesStackParamList } from '@/navigation/types';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/features/auth/AuthContext';
 import type { Group } from '@/features/messages/groups';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { colors, text } from '@/theme';
@@ -14,9 +17,37 @@ type Props = NativeStackScreenProps<MessagesStackParamList, 'GroupOverview'>;
 
 export function GroupOverviewScreen({ navigation, route }: Props) {
   const { groupId } = route.params;
+  const { user } = useAuth();
+  const uid = user?.uid;
   const [group, setGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [events, setEvents] = useState<{ id: string; title: string; startAt: Date }[] | null>(null);
+  const [eventsError, setEventsError] = useState(false);
+
+  useEffect(() => {
+    setEvents(null);
+    setEventsError(false);
+    if (!uid) return;
+
+    // Include the participant filter required by the Firestore event read rule.
+    const groupEvents = query(
+      collection(db, 'events'),
+      where('groupId', '==', groupId),
+      where('participantIds', 'array-contains', uid),
+    );
+    return onSnapshot(groupEvents, (snapshot) => {
+      const now = Date.now();
+      const upcoming = snapshot.docs.flatMap((event) => {
+        const data = event.data();
+        const startAt = data.startAt?.toDate?.();
+        if (!startAt || !(data.endAt?.toMillis?.() > now) || data.status === 'cancelled') return [];
+        return [{ id: event.id, title: data.title ?? 'Untitled Event', startAt }];
+      });
+      setEvents(upcoming.sort((a, b) => a.startAt.getTime() - b.startAt.getTime()));
+      setEventsError(false);
+    }, () => setEventsError(true));
+  }, [groupId, uid]);
 
   useEffect(() => {
     // Clear the previous group's data before starting a new subscription.
@@ -95,7 +126,24 @@ export function GroupOverviewScreen({ navigation, route }: Props) {
 
             <View style={styles.events}>
               <Text style={styles.sectionTitle}>Upcoming Events</Text>
-              <Text style={styles.emptyText}>No upcoming events.</Text>
+              {eventsError ? (
+                <Text style={styles.emptyText}>Could not load upcoming events.</Text>
+              ) : events === null ? (
+                <ActivityIndicator color={colors.white} accessibilityLabel="Loading upcoming events" />
+              ) : events.length === 0 ? (
+                <Text style={styles.emptyText}>No upcoming events.</Text>
+              ) : events.map((event) => (
+                <Pressable
+                  key={event.id}
+                  accessibilityRole="button"
+                  style={styles.control}
+                  onPress={() => navigation.getParent<NativeStackNavigationProp<AppStackParamList>>()
+                    ?.navigate('EventDetails', { eventId: event.id })}
+                >
+                  <Text style={styles.body}>{event.title}</Text>
+                  <Text style={styles.emptyText}>{event.startAt.toLocaleString()}</Text>
+                </Pressable>
+              ))}
             </View>
           </View>
         )}

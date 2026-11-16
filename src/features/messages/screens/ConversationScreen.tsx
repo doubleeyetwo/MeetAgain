@@ -3,14 +3,14 @@ import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text,
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { NativeStackScreenProps, type NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { doc, getDoc, collection, onSnapshot, query, where, } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { collections } from '@/data/firestorePaths';
 import { useAuth } from '@/features/auth/AuthContext';
 import { pickChatPhotoFromLibrary } from '@/features/auth/profilePhoto';
 import { colors, gradientDirection, gradients, spacing, text } from '@/theme';
-import { MessagesStackParamList } from '@/navigation/types';
+import { MessagesStackParamList, type AppStackParamList } from '@/navigation/types';
 import { PublicProfile } from '@/types/models';
 import {
   sendGroupMessage,
@@ -478,19 +478,26 @@ useEffect(() => {
                 if (item.kind === 'event') {
                   const event = item.event;
                   content = (
-                    <EventChatCard
-                      title={event.title}
-                      photoURL={event.photoURL}
-                      date={event.startAt.toLocaleDateString()}
-                      time={`${event.startAt.toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })} – ${event.endAt.toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}`}
-                      location={event.location}
-                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open event: ${event.title}`}
+                      onPress={() => navigation.getParent<NativeStackNavigationProp<AppStackParamList>>()
+                        ?.navigate('EventDetails', { eventId: event.id })}
+                    >
+                      <EventChatCard
+                        title={event.title}
+                        photoURL={event.photoURL}
+                        date={event.startAt.toLocaleDateString()}
+                        time={`${event.startAt.toLocaleTimeString([], {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })} – ${event.endAt.toLocaleTimeString([], {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}`}
+                        location={event.location}
+                      />
+                    </Pressable>
                   );
                 } else {
                   const message = item.message;
