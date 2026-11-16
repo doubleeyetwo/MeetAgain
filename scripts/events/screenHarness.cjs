@@ -69,13 +69,16 @@ const TextInput = host('TextInput');
 const proxy = (value) => new Proxy({}, { get: () => value });
 
 const reactNative = {
+  ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: () => {} },
+  Image: host('Image'),
   KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: host('Modal'),
   Platform: { OS: 'ios' },
   Pressable: host('Pressable'),
   ScrollView: host('ScrollView'),
   StyleSheet: { create: (sheet) => sheet },
+  Switch: host('Switch'),
   Text,
   TextInput,
   View: host('View'),
@@ -133,6 +136,12 @@ function loadScreen(repoRelativePath, extraModules = {}) {
         }
         if (id === '@/components/ContinueButton') {
           return { ContinueButton: host('ContinueButton') };
+        }
+        if (id === '@/components/Logo') {
+          return { Logo: host('Logo'), LogoMark: host('LogoMark') };
+        }
+        if (id === 'react-native-safe-area-context') {
+          return { SafeAreaView: host('SafeAreaView') };
         }
         return {};
       },
